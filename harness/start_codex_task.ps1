@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory=$true)]
     [string]$TaskId
 )
@@ -13,6 +13,8 @@ $promptFile   = Join-Path $requestsDir "codex_auto_$TaskId.md"
 $logFile      = Join-Path $logsDir     "codex_$TaskId.log"
 $lastFile     = Join-Path $logsDir     "codex_$TaskId.last.md"
 $reviewerFile = Join-Path $requestsDir "reviewer_auto_$TaskId.md"
+$statusDir    = Join-Path $projectRoot "ai\status"
+$statusFile   = Join-Path $statusDir   "task_$TaskId.json"
 
 Write-Host "=== TTRS Codex Task Runner ===" -ForegroundColor Cyan
 Write-Host "Task ID : $TaskId"
@@ -23,7 +25,7 @@ if (-not (Test-Path $taskFile)) {
     exit 1
 }
 
-foreach ($dir in @($requestsDir, $logsDir, $reviewsDir)) {
+foreach ($dir in @($requestsDir, $logsDir, $reviewsDir, $statusDir)) {
     if (-not (Test-Path $dir)) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
         Write-Host "Created : $dir" -ForegroundColor DarkGray
@@ -108,6 +110,11 @@ $lastLines
 
 [System.IO.File]::WriteAllText($reviewerFile, $reviewerContent, [System.Text.Encoding]::UTF8)
 Write-Host "[Review] Saved   : $reviewerFile" -ForegroundColor Green
+
+# Write status: codex_done (Claude 리뷰 대기)
+$statusJson = "{`"task_id`":`"$TaskId`",`"status`":`"codex_done`",`"round`":0,`"timestamp`":`"$timestamp`"}"
+[System.IO.File]::WriteAllText($statusFile, $statusJson, [System.Text.Encoding]::UTF8)
+Write-Host "[Status] codex_done → $statusFile"
 
 # Final git status
 Write-Host ""
