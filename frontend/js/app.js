@@ -1,31 +1,24 @@
-const nicknameInput = document.querySelector("#nickname");
-const message = document.querySelector("#message");
-
-function nickname() {
-  const value = nicknameInput.value.trim();
-  if (!value) {
-    message.textContent = "닉네임을 입력해주세요.";
-    nicknameInput.focus();
-    return null;
-  }
-  return value;
-}
-
-document.querySelectorAll("[data-action]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const action = button.dataset.action;
-    if (action === "how-to") {
-      message.textContent = "← → 이동 · ↑ 회전 · ↓ 내리기 · Space 즉시 내리기";
-      return;
-    }
-    const playerName = nickname();
-    if (!playerName) return;
-    const labels = {
-      "quick-match": "상대방을 찾는 기능은 다음 단계에서 연결됩니다.",
-      "create-room": "방 만들기 기능은 다음 단계에서 연결됩니다.",
-      "join-room": "방 참가 기능은 다음 단계에서 연결됩니다.",
-    };
-    message.textContent = `${playerName}님, ${labels[action]}`;
-  });
-});
-
+const COLS=10, ROWS=20, SIZE=30, BEST_KEY="ttrs-40-lines-best";
+const SHAPES=[{color:"#41c7d3",cells:[[1,1,1,1]]},{color:"#f4d03f",cells:[[1,1],[1,1]]},{color:"#9b6bdb",cells:[[0,1,0],[1,1,1]]},{color:"#4caf6e",cells:[[0,1,1],[1,1,0]]},{color:"#e85151",cells:[[1,1,0],[0,1,1]]},{color:"#4e8fe8",cells:[[1,0,0],[1,1,1]]},{color:"#e7904d",cells:[[0,0,1],[1,1,1]]}];
+const boardCanvas=document.querySelector("#board"),ctx=boardCanvas.getContext("2d"),nextCanvas=document.querySelector("#next"),nextCtx=nextCanvas.getContext("2d"),linesEl=document.querySelector("#lines"),timeEl=document.querySelector("#time"),bestEl=document.querySelector("#best"),overlay=document.querySelector("#overlay"),status=document.querySelector("#status");
+let board,current,next,running=false,lines=0,startedAt=0,elapsed=0,dropAt=0,frame;
+function makePiece(){const shape=SHAPES[Math.floor(Math.random()*SHAPES.length)];return {...shape,cells:shape.cells.map(row=>[...row]),x:0,y:0};}
+function resetBoard(){return Array.from({length:ROWS},()=>Array(COLS).fill(null));}
+function format(ms){const total=Math.floor(ms/10),min=Math.floor(total/6000),sec=Math.floor(total/100)%60,cs=total%100;return `${String(min).padStart(2,"0")}:${String(sec).padStart(2,"0")}.${String(cs).padStart(2,"0")}`;}
+function drawCell(context,x,y,color,size=SIZE){context.fillStyle=color||"#151a1e";context.fillRect(x*size+1,y*size+1,size-2,size-2);}
+function draw(){ctx.fillStyle="#101316";ctx.fillRect(0,0,300,600);board.forEach((row,y)=>row.forEach((cell,x)=>drawCell(ctx,x,y,cell)));if(current)current.cells.forEach((row,y)=>row.forEach((cell,x)=>{if(cell)drawCell(ctx,current.x+x,current.y+y,current.color);}));drawNext();}
+function drawNext(){nextCtx.fillStyle="#101316";nextCtx.fillRect(0,0,120,120);const size=24,w=next.cells[0].length,h=next.cells.length;next.cells.forEach((row,y)=>row.forEach((cell,x)=>{if(cell)drawCell(nextCtx,x+(5-w)/2,y+(5-h)/2,next.color,size);}));}
+function collides(piece,dx=0,dy=0,cells=piece.cells){return cells.some((row,y)=>row.some((cell,x)=>cell&&(piece.x+x+dx<0||piece.x+x+dx>=COLS||piece.y+y+dy>=ROWS||(piece.y+y+dy>=0&&board[piece.y+y+dy][piece.x+x+dx]))));}
+function rotate(){const rotated=current.cells[0].map((_,i)=>current.cells.map(row=>row[i]).reverse());if(!collides(current,0,0,rotated))current.cells=rotated;else if(!collides(current,-1,0,rotated)){current.x--;current.cells=rotated;}else if(!collides(current,1,0,rotated)){current.x++;current.cells=rotated;}}
+function lock(){current.cells.forEach((row,y)=>row.forEach((cell,x)=>{if(cell&&current.y+y>=0)board[current.y+y][current.x+x]=current.color;}));clearLines();current=next;current.x=Math.floor((COLS-current.cells[0].length)/2);current.y=0;next=makePiece();if(collides(current))finish(false);}
+function clearLines(){let cleared=0;board=board.filter(row=>{if(row.every(Boolean)){cleared++;return false;}return true;});while(board.length<ROWS)board.unshift(Array(COLS).fill(null));if(cleared){lines+=cleared;linesEl.innerHTML=`${lines} <small>/ 40</small>`;if(lines>=40)finish(true);}}
+function move(dx){if(running&&!collides(current,dx))current.x+=dx;}
+function down(){if(!running)return;if(!collides(current,0,1))current.y++;else lock();}
+function drop(){if(!running)return;while(!collides(current,0,1))current.y++;lock();}
+function finish(won){running=false;cancelAnimationFrame(frame);elapsed=performance.now()-startedAt;timeEl.textContent=format(elapsed);overlay.hidden=false;overlay.querySelector("strong").textContent=won?"COMPLETE":"GAME OVER";overlay.querySelector("span").textContent=won?`${format(elapsed)} 기록`:"RESTART로 다시 시작";if(won){const old=Number(localStorage.getItem(BEST_KEY));if(!old||elapsed<old){localStorage.setItem(BEST_KEY,String(elapsed));bestEl.textContent=format(elapsed);status.textContent="새 최고 기록입니다. 이 브라우저에 저장됐습니다.";}else status.textContent="완주했습니다. 최고 기록에 다시 도전하세요.";}}
+function tick(now){if(!running)return;elapsed=now-startedAt;timeEl.textContent=format(elapsed);if(now-dropAt>700){down();dropAt=now;}draw();frame=requestAnimationFrame(tick);}
+function start(){board=resetBoard();lines=0;elapsed=0;current=makePiece();current.x=Math.floor((COLS-current.cells[0].length)/2);next=makePiece();running=true;startedAt=performance.now();dropAt=startedAt;linesEl.innerHTML="0 <small>/ 40</small>";timeEl.textContent="00:00.00";overlay.hidden=true;status.textContent="40줄을 지우면 기록이 저장됩니다.";cancelAnimationFrame(frame);draw();frame=requestAnimationFrame(tick);}
+document.querySelector("#start-button").addEventListener("click",start);document.querySelector("#restart-button").addEventListener("click",start);
+document.addEventListener("keydown",event=>{if(["ArrowLeft","ArrowRight","ArrowDown","ArrowUp"," "].includes(event.key))event.preventDefault();if(event.key==="ArrowLeft")move(-1);if(event.key==="ArrowRight")move(1);if(event.key==="ArrowDown")down();if(event.key==="ArrowUp")rotate();if(event.key===" ")drop();draw();});
+document.querySelectorAll("[data-control]").forEach(button=>button.addEventListener("click",()=>{const action=button.dataset.control;if(action==="left")move(-1);if(action==="right")move(1);if(action==="down")down();if(action==="rotate")rotate();if(action==="drop")drop();draw();}));
+const saved=Number(localStorage.getItem(BEST_KEY));if(saved)bestEl.textContent=format(saved);board=resetBoard();current=makePiece();next=makePiece();draw();

@@ -1,43 +1,7 @@
 <!doctype html>
-<html lang="ko">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#172554" />
-    <title>테트리스 배틀</title>
-    <link rel="stylesheet" href="/static/css/style.css" />
-  </head>
-  <body>
-    <main class="lobby" aria-labelledby="page-title">
-      <section class="lobby-card">
-        <p class="eyebrow">REAL-TIME TETRIS</p>
-        <h1 id="page-title">테트리스 배틀</h1>
-        <p class="subtitle">간단하게 즐기는 실시간 대전</p>
-
-        <form id="lobby-form" novalidate>
-          <label for="nickname">닉네임</label>
-          <input
-            id="nickname"
-            name="nickname"
-            type="text"
-            maxlength="12"
-            autocomplete="nickname"
-            placeholder="닉네임을 입력하세요"
-            aria-describedby="message"
-          />
-          <p id="message" class="message" role="status" aria-live="polite"></p>
-
-          <div class="actions">
-            <button type="button" data-action="quick-match">바로 대전하기</button>
-            <button type="button" data-action="create-room" class="secondary">방 만들기</button>
-            <button type="button" data-action="join-room" class="secondary">방 참가하기</button>
-          </div>
-        </form>
-
-        <button type="button" data-action="how-to" class="text-button">게임 방법</button>
-      </section>
-    </main>
-    <script src="/static/js/app.js" defer></script>
-  </body>
-</html>
-
+<html lang="ko"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="theme-color" content="#0b0d10" /><title>40 LINES · TETRIS</title><link rel="stylesheet" href="/static/css/style.css" /></head>
+<body><main class="game-shell" aria-labelledby="page-title"><header class="masthead"><p class="eyebrow">SOLO MODE / LOCAL RECORD</p><h1 id="page-title">40 LINES</h1><p class="tagline">40줄을 가장 빠르게 지우세요.</p></header>
+<section class="game-layout" aria-label="40라인 테트리스 게임"><aside class="panel stats-panel" aria-label="게임 정보"><div class="stat"><span>LINES</span><strong id="lines">0 <small>/ 40</small></strong></div><div class="stat"><span>TIME</span><strong id="time">00:00.00</strong></div><div class="stat"><span>BEST</span><strong id="best">--:--.--</strong></div><button id="start-button" type="button">START</button><button id="restart-button" class="outline" type="button">RESTART</button></aside>
+<section class="board-wrap"><canvas id="board" width="300" height="600" aria-label="테트리스 보드"></canvas><div id="overlay" class="overlay"><strong>READY</strong><span>START를 눌러 시작</span></div></section>
+<aside class="panel next-panel" aria-label="다음 블록과 조작법"><p class="panel-label">NEXT</p><canvas id="next" width="120" height="120" aria-label="다음 블록"></canvas><div class="controls"><p class="panel-label">CONTROLS</p><p>← → 이동</p><p>↑ 회전</p><p>↓ 소프트 드롭</p><p>SPACE 하드 드롭</p></div></aside></section>
+<div class="mobile-controls" aria-label="모바일 조작"><button data-control="left" type="button">←</button><button data-control="rotate" type="button">↻</button><button data-control="right" type="button">→</button><button data-control="down" type="button">↓</button><button data-control="drop" type="button">DROP</button></div><p id="status" class="status" role="status" aria-live="polite">로컬 기록은 이 브라우저에 저장됩니다.</p></main><script src="/static/js/app.js" defer></script></body></html>
