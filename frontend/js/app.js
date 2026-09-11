@@ -171,10 +171,11 @@ function paintBlock(context,x,y,size,color,ghost=false) {
 function block(x,y,color) {
   if(y<2)return;const px=x*30,py=(y-2)*30;
   if(color)paintBlock(ctx,px,py,30,color);
-  else {ctx.fillStyle="#ece6f2";ctx.beginPath();ctx.roundRect(px+1,py+1,28,28,5);ctx.fill();}
+  else {ctx.fillStyle="#0d1526";ctx.beginPath();ctx.roundRect(px+1,py+1,28,28,3);ctx.fill();}
 }
 function draw(now) {
-  ctx.clearRect(0,0,300,600);ctx.fillStyle="#f5f1f9";ctx.fillRect(0,0,300,600);
+  // The 2px gaps between empty cells reveal this lighter fill as the board grid.
+  ctx.clearRect(0,0,300,600);ctx.fillStyle="#223151";ctx.fillRect(0,0,300,600);
   game.board.forEach((row,y)=>row.forEach((v,x)=>block(x,y,v)));
   if(phase!=="finished"&&!game.over) {
     if(prefs.ghost) {const ghost={...game.current};while(!game.blocked(ghost,0,1))ghost.y++;cells(ghost).forEach(({x,y})=>{if(y>=2)paintBlock(ctx,x*30,(y-2)*30,30,game.current.c,true);});}
@@ -183,7 +184,7 @@ function draw(now) {
   effects=effects.filter(e=>now-e.at<e.duration);
   if(prefs.effects)effects.forEach(effect=>{
     const fade=Math.max(0,1-(now-effect.at)/effect.duration);ctx.save();ctx.globalAlpha=fade*(reducedMotion.matches ? .2 : .65);
-    if(effect.kind==="clear")effect.rows.forEach(y=>{if(y>=2) {ctx.fillStyle="#fff4bd";ctx.fillRect(0,(y-2)*30,300,30);}});
+    if(effect.kind==="clear")effect.rows.forEach(y=>{if(y>=2) {ctx.fillStyle="#d6efff";ctx.fillRect(0,(y-2)*30,300,30);}});
     else if(effect.kind==="lock") {ctx.fillStyle="#ffffff";effect.cells.forEach(({x,y})=>{if(y>=2){ctx.beginPath();ctx.roundRect(x*30+1,(y-2)*30+1,28,28,6);ctx.fill();}});}
     else if(!reducedMotion.matches)effect.cells.forEach(({x,y})=>{
       const top=Math.max(0,(y-2)*30),bottom=(y+effect.distance-1)*30,gradient=ctx.createLinearGradient(0,top,0,Math.max(top+1,bottom));
