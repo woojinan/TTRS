@@ -2,13 +2,14 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#0b0d10"><title>40 LINES · TETRIS</title>
+  <meta name="theme-color" content="#f6f3fb"><title>40 LINES · TETRIS</title>
   <link rel="icon" href="data:,"><link rel="stylesheet" href="/static/css/style.css">
 </head>
-<body>
+<body data-phase="ready">
 <main class="game-shell">
-  <header class="masthead"><div><p id="mode-eyebrow">SOLO SPRINT · 40 LINE CHALLENGE</p><h1 id="game-title">40 LINES</h1></div><button id="settings-button" class="icon-button" type="button">SETTINGS</button></header>
-  <nav class="mode-switch" aria-label="게임 모드"><button type="button" data-mode="sprint" aria-pressed="true">40 LINES <small>40줄 기록 도전</small></button><button type="button" data-mode="attack" aria-pressed="false">TIME ATTACK <small>2분 점수 도전</small></button></nav>
+  <header class="topbar"><a class="brand" href="/" aria-label="TTRS 홈"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>TTRS<span class="brand-note">a little block break</span></a><div class="topbar-actions"><button id="skins-button" class="icon-button skin-launch" type="button"><span aria-hidden="true">✦</span> 블록 스킨 <span id="current-skin-name">젤리</span></button><button id="settings-button" class="icon-button" type="button"><span aria-hidden="true">⚙</span> SETTINGS</button></div></header>
+  <header class="masthead"><div><p id="mode-eyebrow">SOLO SPRINT · 40 LINE CHALLENGE</p><h1 id="game-title">40 LINES</h1></div><p class="hero-note">한 블록씩, 기분 좋은 몰입.<br><span>오늘의 작은 기록을 만들어보세요.</span></p></header>
+  <nav class="mode-switch" aria-label="게임 모드"><button type="button" data-mode="sprint" aria-pressed="true"><span class="mode-icon" aria-hidden="true">⚑</span><span>40 LINES <small>40줄 기록 도전</small></span><span class="mode-dot" aria-hidden="true"></span></button><button type="button" data-mode="attack" aria-pressed="false"><span class="mode-icon" aria-hidden="true">◷</span><span>TIME ATTACK <small>2분 점수 도전</small></span><span class="mode-dot" aria-hidden="true"></span></button></nav>
   <section class="game-layout">
     <aside class="column left">
       <section class="panel hold-panel"><p class="panel-label">HOLD <kbd>C</kbd></p><canvas id="hold" width="120" height="120"></canvas></section>
@@ -17,9 +18,9 @@
     <section class="board-column">
       <div class="progress-heading"><span id="progress-label">40줄 남음</span><span id="progress-value">0%</span></div>
       <progress id="progress" max="40" value="0" aria-label="목표 진행률"></progress>
-      <div class="board-wrap"><canvas id="board" width="300" height="600" aria-label="테트리스 보드"></canvas><div id="board-feedback" class="board-feedback" aria-hidden="true"></div><div id="overlay" class="overlay"><strong id="overlay-title">READY</strong><span id="overlay-description">40줄을 가장 빠르게 지워보세요</span><button id="start-button" type="button">START</button></div></div>
+      <div class="board-wrap"><canvas id="board" width="300" height="600" aria-label="테트리스 보드"></canvas><div id="board-feedback" class="board-feedback" aria-hidden="true"></div><div id="overlay" class="overlay"><div class="overlay-art" aria-hidden="true"><i></i><i></i><i></i><i></i></div><strong id="overlay-title">READY</strong><span id="overlay-description">40줄을 가장 빠르게 지워보세요</span><button id="start-button" type="button">START</button></div></div>
     </section>
-    <aside class="column right"><section class="panel next-panel"><p class="panel-label">NEXT <small>×5</small></p><div id="next-list"></div></section><section class="panel event-panel"><p class="panel-label">ACTION</p><strong id="event-text">—</strong><p id="combo-text">COMBO —</p><p id="b2b-text">B2B —</p></section><button id="restart-button" class="restart" type="button">RESTART <kbd>R</kbd></button></aside>
+    <aside class="column right"><section class="panel next-panel"><p class="panel-label">NEXT <small>×5</small></p><div id="next-list"></div></section><section class="panel event-panel"><p class="panel-label">NICE MOVES <span aria-hidden="true">✦</span></p><strong id="event-text">—</strong><p id="combo-text">COMBO —</p><p id="b2b-text">B2B —</p></section><button id="restart-button" class="restart" type="button">↻ RESTART <kbd>R</kbd></button></aside>
   </section>
   <section class="mobile-controls" aria-label="모바일 조작"><button data-control="hold">HOLD</button><button data-control="left">←</button><button data-control="rotate-left">↺</button><button data-control="rotate-right">↻</button><button data-control="right">→</button><button data-control="down">↓</button><button data-control="drop">DROP</button></section>
   <p id="status" class="status" role="status">40줄 완주 · 일정한 낙하 속도 · 최고 기록에 도전하세요</p>
@@ -27,8 +28,10 @@
     <div class="result-heading"><div><p class="section-kicker" id="result-mode">40 LINES</p><h2 id="result-title">COMPLETE</h2></div><strong id="result-primary"></strong></div>
     <p id="result-comparison"></p><dl id="result-stats" class="result-stats"></dl><button id="result-retry" type="button">다시 도전</button>
   </section>
-  <section class="history-panel" aria-labelledby="history-title"><header><h2 id="history-title">RECENT RUNS</h2><span>선택한 모드 · 최근 10판</span></header><p id="history-empty">첫 번째 기록을 만들어보세요.</p><div class="history-scroll"><table id="history-table" hidden><thead><tr><th scope="col">날짜</th><th scope="col">결과</th><th scope="col">시간</th><th scope="col">점수</th><th scope="col">줄</th><th scope="col">PPS</th></tr></thead><tbody id="history-body"></tbody></table></div><p class="storage-note" id="storage-note">기록과 설정은 이 브라우저에 저장됩니다.</p></section>
+  <section class="history-panel" aria-labelledby="history-title"><header><div><p class="section-kicker">YOUR LITTLE MILESTONES</p><h2 id="history-title">나의 플레이 기록</h2></div><span>선택한 모드 · 최근 10판</span></header><p id="history-empty"><span class="empty-spark" aria-hidden="true">✧</span>아직은 비어 있는 기록장.<br><span>첫 번째 플레이로 채워볼까요?</span></p><div class="history-scroll"><table id="history-table" hidden><thead><tr><th scope="col">날짜</th><th scope="col">결과</th><th scope="col">시간</th><th scope="col">점수</th><th scope="col">줄</th><th scope="col">PPS</th></tr></thead><tbody id="history-body"></tbody></table></div><p class="storage-note" id="storage-note">기록과 설정은 이 브라우저에 저장됩니다.</p></section>
+  <footer class="page-footer">MADE FOR YOUR NEXT LITTLE BREAK <span aria-hidden="true">✦</span> TTRS</footer>
 </main>
+<dialog id="skins-dialog" aria-labelledby="skins-title"><div class="skins-content"><header class="skins-heading"><div><p class="section-kicker">THE BLOCK WARDROBE</p><h2 id="skins-title">오늘의 블록을 골라보세요</h2><p>같은 게임, 다섯 가지 기분.</p></div><button id="close-skins" class="close-button" type="button" aria-label="스킨 선택 닫기">×</button></header><div id="skin-options" class="skin-options" role="group" aria-label="블록 스킨 선택"></div><div class="skin-preview-footer"><span id="skin-selection-status" role="status">젤리 스킨을 사용 중이에요.</span><button id="done-skins" class="primary-button" type="button">이 스킨으로 플레이</button></div><p class="skin-playing-note" hidden>스킨을 고르는 동안에도 게임은 계속 진행됩니다.</p></div></dialog>
 <dialog id="settings-dialog"><form method="dialog">
   <header><strong>SETTINGS</strong><button value="close" aria-label="설정 닫기">×</button></header>
   <label>DAS <output id="das-value">133 ms</output><input id="das-input" type="range" min="0" max="300" step="1"></label><p>방향키를 누른 뒤 자동 이동이 시작되는 시간</p>
@@ -40,5 +43,5 @@
   <label class="check"><input id="effects-input" type="checkbox"> 착지·줄 삭제 효과</label>
   <p class="rule-note">낙하 속도: 1초에 1칸 · 잠금 지연: 500 ms / 최대 15회 리셋<br>설정 중에도 게임과 타이머는 계속 진행됩니다.</p><button id="save-settings" value="close">SAVE SETTINGS</button>
 </form></dialog>
-<script src="/static/js/engine.js" defer></script><script src="/static/js/audio.js" defer></script><script src="/static/js/app.js" defer></script>
+<script src="/static/js/engine.js" defer></script><script src="/static/js/audio.js" defer></script><script src="/static/js/skins.js" defer></script><script src="/static/js/app.js" defer></script>
 </body></html>

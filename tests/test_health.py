@@ -24,7 +24,7 @@ def test_index_serves_both_game_modes() -> None:
 
 
 def test_game_assets_are_served() -> None:
-    for path in ("js/engine.js", "js/audio.js", "js/app.js", "css/style.css"):
+    for path in ("js/engine.js", "js/audio.js", "js/skins.js", "js/app.js", "css/style.css"):
         response = client.get(f"/static/{path}")
         assert response.status_code == 200
         assert len(response.content) > 100

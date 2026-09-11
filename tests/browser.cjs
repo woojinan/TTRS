@@ -16,11 +16,11 @@ function send(method,params={}) {return new Promise((resolve,reject)=>{const id=
 async function evaluate(expression) {const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true,userGesture:true});if(r.exceptionDetails)throw new Error(r.exceptionDetails.exception?.description||r.exceptionDetails.text);return r.result.value;}
 async function until(expression,timeout=6000) {const end=Date.now()+timeout;while(Date.now()<end){if(await evaluate(expression))return;await delay(40);}throw new Error(`Timed out: ${expression}`);}
 async function check(name,work) {await work();passed++;console.log(`PASS ${passed}: ${name}`);}
-async function click(selector) {const box=await evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);await send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...box});await send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...box});}
+async function click(selector) {const box=await evaluate(`(()=>{const element=document.querySelector(${JSON.stringify(selector)});element.scrollIntoView({block:'nearest',inline:'nearest'});const r=element.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);await send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...box});await send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...box});await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');}
 async function key(key,code=key) {await send('Input.dispatchKeyEvent',{type:'keyDown',key,code});await send('Input.dispatchKeyEvent',{type:'keyUp',key,code});}
 async function screenshot(name,full=false) {if(full){const m=await send('Page.getLayoutMetrics');const {width,height}=m.cssContentSize;const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true,clip:{x:0,y:0,width,height,scale:1}});fs.writeFileSync(path.join(artifacts,name),Buffer.from(shot.data,'base64'));}else{const shot=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(artifacts,name),Buffer.from(shot.data,'base64'));}}
 async function well(){await evaluate(`(()=>{game.board=Array.from({length:22},()=>Array(10).fill(null));for(let y=18;y<22;y++)game.board[y]=Array.from({length:10},(_,x)=>x===5?null:'#647580');game.current=clone('I');game.rotate(1,performance.now());game.current.x=3;game.current.y=10;game.resetPiece(performance.now());draw(performance.now());})()`);}
-async function reload(){await send('Page.reload',{ignoreCache:true});await until(`typeof phase!=='undefined'&&phase==='ready'&&document.readyState==='complete'`);}
+async function reload(){const previous=await evaluate('performance.timeOrigin');await send('Page.reload',{ignoreCache:true});await until(`performance.timeOrigin!==${previous}&&typeof phase!=='undefined'&&phase==='ready'&&document.readyState==='complete'`);}
 async function startFast(){await evaluate(`start();countdownAt=performance.now()-3001;`);await until(`phase==='playing'`);}
 (async()=>{
   try {
@@ -41,6 +41,29 @@ async function startFast(){await evaluate(`start();countdownAt=performance.now()
       assert.equal(await evaluate(`(()=>{const b=canvas.getBoundingClientRect(),w=document.querySelector('.board-wrap').getBoundingClientRect();return b.width===300&&b.height===600&&w.width>=b.width&&w.height>=b.height;})()`),true);
       await screenshot('01-ready.png');
     });
+    await check('five distinct skins apply to placed/current blocks, hold and next without changing the game',async()=>{
+      await startFast();
+      await evaluate(`game.board=Array.from({length:22},()=>Array(10).fill(null));Object.values(Tetris.PIECES).forEach((p,i)=>{game.board[21][i+1]=p.c;if(i<5)game.board[20][i+2]=p.c;if(i<3)game.board[19][i+3]=p.c;});game.current=clone('T');game.current.y=6;game.hold='L';game.gravityAt=performance.now()+100000;effects=[];feedbackUntil=0;drawPreviews();draw(performance.now());`);
+      const before=await evaluate(`JSON.stringify({board:game.board,current:game.current,score:game.score,lines:game.lines,hold:game.hold,queue:game.queue})`);
+      const renders=[];
+      for(const skin of ['jelly','mochi','crystal','neon','retro']){
+        await click('#skins-button');assert.equal(await evaluate(`document.querySelectorAll('[data-skin]').length`),5);
+        await click(`[data-skin="${skin}"]`);assert.equal(await evaluate('prefs.skin'),skin);
+        assert.equal(await evaluate(`document.querySelectorAll('[data-skin][aria-pressed="true"]').length`),1);
+        assert.equal(await evaluate(`JSON.parse(localStorage.getItem(SETTINGS)).skin`),skin);
+        assert.equal(await evaluate(`JSON.stringify({board:game.board,current:game.current,score:game.score,lines:game.lines,hold:game.hold,queue:game.queue})`),before);
+        renders.push(await evaluate(`({board:canvas.toDataURL(),hold:document.querySelector('#hold').toDataURL(),next:document.querySelector('#next-list canvas').toDataURL()})`));
+        if(skin==='mochi')await screenshot('07-skin-picker.png');
+        await click('#done-skins');await until('!skinsDialog.open');await evaluate('window.scrollTo(0,0)');await screenshot(`skin-${skin}.png`);
+      }
+      for(const target of ['board','hold','next'])assert.equal(new Set(renders.map(r=>r[target])).size,5,`${target} must render five distinct skins`);
+      await reload();assert.equal(await evaluate('prefs.skin'),'retro');assert.equal(await evaluate(`document.querySelector('#current-skin-name').textContent`),'레트로');
+      await click('#skins-button');await click('[data-skin="jelly"]');await click('#done-skins');await until('!skinsDialog.open');
+    });
+    await check('skin dialog blocks game shortcuts and supports Escape',async()=>{
+      await startFast();await click('#skins-button');assert.equal(await evaluate('skinsDialog.open'),true);const before=await evaluate('game.pieces');await key('r','KeyR');assert.equal(await evaluate('game.pieces'),before);assert.equal(await evaluate('phase'),'playing');await key(' ','Space');assert.equal(await evaluate('game.pieces'),before);
+      await key('Escape');await until('!skinsDialog.open');await reload();
+    });
     await check('real 3-second countdown blocks input and excludes preparation time',async()=>{
       const wall=Date.now();await click('#start-button');assert.equal(await evaluate('phase'),'countdown');
       await key(' ','Space');assert.equal(await evaluate('game.pieces'),0);assert.equal(await evaluate('elapsed'),0);
@@ -55,7 +78,7 @@ async function startFast(){await evaluate(`start();countdownAt=performance.now()
       await click('#settings-button');await click('#mute-input');await until('sound.sfx.gain.value===0&&sound.music.gain.value===0');
       await click('#mute-input');await evaluate(`document.querySelector('#sfx-input').value=42;document.querySelector('#sfx-input').dispatchEvent(new Event('input'));document.querySelector('#music-input').value=17;document.querySelector('#music-input').dispatchEvent(new Event('input'));`);
       const before=await evaluate('game.pieces');await key(' ','Space');assert.equal(await evaluate('game.pieces'),before);
-      await screenshot('02-settings.png');await click('#save-settings');await until('!dialog.open&&localStorage.getItem(SETTINGS)!==null');assert.equal(await evaluate(`JSON.parse(localStorage.getItem(SETTINGS)).sfx`),42);
+      await screenshot('02-settings.png');await click('#save-settings');await until('!dialog.open&&JSON.parse(localStorage.getItem(SETTINGS)||"{}").sfx===42');assert.equal(await evaluate(`JSON.parse(localStorage.getItem(SETTINGS)).sfx`),42);
     });
     await check('drop/clear effects do not delay the next input',async()=>{
       await well();await key(' ','Space');assert.ok(await evaluate(`effects.some(e=>e.kind==='drop')&&effects.some(e=>e.kind==='clear')`));
@@ -127,13 +150,19 @@ async function startFast(){await evaluate(`start();countdownAt=performance.now()
       assert.equal(await evaluate('bests.attack'),expected);assert.ok(await evaluate(`document.querySelector('#result-comparison').textContent.includes('1점 높습니다')`));
       await reload();assert.equal(await evaluate('records.filter(r=>r.mode==="attack").length'),10);assert.ok(await evaluate('records.some(r=>r.mode==="sprint")'));
     });
-    await check('narrow viewport retains the existing layout without horizontal overflow',async()=>{
-      await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});
-      assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);await screenshot('06-narrow.png',true);
+    await check('light layout and skin picker fit narrow and short viewports',async()=>{
+      for(const width of [320,390,620,768,1024]){
+        await send('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:false});
+        assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true,`overflow at ${width}`);
+      }
+      await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});await screenshot('06-narrow.png',true);
+      await click('#skins-button');await click('[data-skin="neon"]');assert.equal(await evaluate('prefs.skin'),'neon');await screenshot('08-skins-narrow.png');await click('#done-skins');await until('!skinsDialog.open');
+      await send('Emulation.setDeviceMetricsOverride',{width:1024,height:650,deviceScaleFactor:1,mobile:false});
+      await click('#settings-button');await click('#save-settings');await until('!dialog.open');
       await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
     });
     await check('corrupt saved data falls back without a startup crash',async()=>{
-      await evaluate(`localStorage.setItem(HISTORY,'bad json');localStorage.setItem(SETTINGS,JSON.stringify({das:-90,arr:999,sfx:'bad',music:150}));`);await reload();
+      await evaluate(`localStorage.setItem(HISTORY,'bad json');localStorage.setItem(SETTINGS,JSON.stringify({das:-90,arr:999,sfx:'bad',music:150,skin:'missing'}));`);await reload();assert.equal(await evaluate('prefs.skin'),'jelly');
       assert.equal(await evaluate('records.length'),0);assert.equal(await evaluate('prefs.das'),0);assert.equal(await evaluate('prefs.arr'),100);assert.equal(await evaluate('prefs.sfx'),65);assert.equal(await evaluate('prefs.music'),100);
     });
     await check('unavailable storage allows playing and finishing',async()=>{

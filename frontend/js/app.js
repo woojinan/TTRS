@@ -9,11 +9,15 @@ function write(key,value) { try {localStorage.setItem(key,JSON.stringify(value))
 const clamp=(v,min,max,fallback)=>Number.isFinite(Number(v))?Math.min(max,Math.max(min,Number(v))):fallback;
 const savedPrefs=read(SETTINGS,{})||{};
 let prefs={das:clamp(savedPrefs.das,0,300,133),arr:clamp(savedPrefs.arr,0,100,10),ghost:savedPrefs.ghost!==false,sfx:clamp(savedPrefs.sfx,0,100,65),music:clamp(savedPrefs.music,0,100,20),muted:savedPrefs.muted===true,effects:savedPrefs.effects!==false};
+prefs.skin=BlockSkins.get(savedPrefs.skin).id;
 let records=read(HISTORY,[]);
 records=Array.isArray(records)?records.filter(r=>r&&["sprint","attack"].includes(r.mode)&&[r.elapsed,r.score,r.lines,r.pps].every(n=>Number.isFinite(n)&&n>=0)&&typeof r.date==="string"&&Number.isFinite(Date.parse(r.date))&&typeof r.completed==="boolean").slice(0,20):[];
 const savedSprintBest=Number(read(BEST,0)),savedAttackBest=Number(read(ATTACK_BEST,0));
 const bests={sprint:Number.isFinite(savedSprintBest)&&savedSprintBest>0?savedSprintBest:0,attack:Number.isFinite(savedAttackBest)&&savedAttackBest>0?savedAttackBest:0};
 const sound=new GameAudio(),canvas=$("#board"),ctx=canvas.getContext("2d"),holdCtx=$("#hold").getContext("2d"),dialog=$("#settings-dialog");
+const skinsDialog=$("#skins-dialog"),skinTiles=new Map();
+canvas.width=600;canvas.height=1200;ctx.scale(2,2);
+$("#hold").width=240;$("#hold").height=240;$("#hold").style.width="120px";$("#hold").style.height="120px";holdCtx.scale(2,2);
 const reducedMotion=window.matchMedia("(prefers-reduced-motion: reduce)");
 let game=new Game(),mode="sprint",phase="ready",startedAt=0,countdownAt=0,countdownNumber=0,elapsed=0;
 let keys={},direction=0,repeatAt=0,softAt=0,effects=[],feedbackUntil=0,frame=null;
@@ -136,6 +140,7 @@ function selectMode(next) {
   drawPreviews();updateHud();renderHistory();draw(performance.now());
 }
 function updateHud() {
+  if(document.body.dataset.phase!==phase)document.body.dataset.phase=phase;
   $("#lines").innerHTML=mode==="sprint"?`${Math.min(game.lines,40)} <small>/ 40</small>`:String(game.lines);
   $("#time").textContent=fmt(mode==="attack"?ATTACK_MS-elapsed:elapsed);$("#score").textContent=game.score.toLocaleString();
   $("#best").textContent=mode==="sprint"?bests.sprint?fmt(bests.sprint):"--:--.--":bests.attack.toLocaleString();
@@ -149,32 +154,40 @@ function drawMini(context,type,w,h) {
   context.clearRect(0,0,w,h);if(!type)return;
   const p=clone(type),occupied=cells(p),minX=Math.min(...occupied.map(c=>c.x)),minY=Math.min(...occupied.map(c=>c.y));
   const cols=Math.max(...occupied.map(c=>c.x))-minX+1,rows=Math.max(...occupied.map(c=>c.y))-minY+1,s=20;
-  context.fillStyle=p.c;occupied.forEach(({x,y})=>context.fillRect((w-cols*s)/2+(x-minX)*s+1,(h-rows*s)/2+(y-minY)*s+1,s-2,s-2));
+  occupied.forEach(({x,y})=>paintBlock(context,(w-cols*s)/2+(x-minX)*s,(h-rows*s)/2+(y-minY)*s,s,p.c));
 }
 function drawPreviews() {
   drawMini(holdCtx,game.hold,120,120);$("#hold").style.opacity=game.canHold?"1":".4";
-  $("#next-list").replaceChildren(...game.queue.slice(0,5).map(type=>{const c=document.createElement("canvas");c.width=158;c.height=62;c.className="next-item";drawMini(c.getContext("2d"),type,158,62);return c;}));
+  $("#next-list").replaceChildren(...game.queue.slice(0,5).map(type=>{const c=document.createElement("canvas");c.width=316;c.height=104;c.className="next-item";const context=c.getContext("2d");context.scale(2,2);drawMini(context,type,158,52);return c;}));
+}
+function paintBlock(context,x,y,size,color,ghost=false) {
+  const key=`${prefs.skin}:${color}:${size}:${ghost}`;
+  if(!skinTiles.has(key)) {
+    const tile=document.createElement("canvas");tile.width=size*2;tile.height=size*2;
+    const tileCtx=tile.getContext("2d");tileCtx.scale(2,2);BlockSkins.draw(tileCtx,0,0,size,color,prefs.skin,ghost);skinTiles.set(key,tile);
+  }
+  context.drawImage(skinTiles.get(key),x,y,size,size);
 }
 function block(x,y,color) {
   if(y<2)return;const px=x*30,py=(y-2)*30;
-  ctx.fillStyle=color||"#151a1e";ctx.fillRect(px+1,py+1,28,28);
-  if(color) {ctx.fillStyle="#ffffff25";ctx.fillRect(px+2,py+2,26,2);}
+  if(color)paintBlock(ctx,px,py,30,color);
+  else {ctx.fillStyle="#ece6f2";ctx.beginPath();ctx.roundRect(px+1,py+1,28,28,5);ctx.fill();}
 }
 function draw(now) {
-  ctx.clearRect(0,0,300,600);ctx.fillStyle="#101316";ctx.fillRect(0,0,300,600);
+  ctx.clearRect(0,0,300,600);ctx.fillStyle="#f5f1f9";ctx.fillRect(0,0,300,600);
   game.board.forEach((row,y)=>row.forEach((v,x)=>block(x,y,v)));
   if(phase!=="finished"&&!game.over) {
-    if(prefs.ghost) {const ghost={...game.current};while(!game.blocked(ghost,0,1))ghost.y++;ctx.strokeStyle="#d2dce15a";ctx.lineWidth=1;cells(ghost).forEach(({x,y})=>{if(y>=2)ctx.strokeRect(x*30+4,(y-2)*30+4,22,22);});}
+    if(prefs.ghost) {const ghost={...game.current};while(!game.blocked(ghost,0,1))ghost.y++;cells(ghost).forEach(({x,y})=>{if(y>=2)paintBlock(ctx,x*30,(y-2)*30,30,game.current.c,true);});}
     cells(game.current).forEach(({x,y})=>block(x,y,game.current.c));
   }
   effects=effects.filter(e=>now-e.at<e.duration);
   if(prefs.effects)effects.forEach(effect=>{
-    const fade=Math.max(0,1-(now-effect.at)/effect.duration);ctx.save();ctx.globalAlpha=fade*(reducedMotion.matches?.2:.65);
+    const fade=Math.max(0,1-(now-effect.at)/effect.duration);ctx.save();ctx.globalAlpha=fade*(reducedMotion.matches ? .2 : .65);
     if(effect.kind==="clear")effect.rows.forEach(y=>{if(y>=2) {ctx.fillStyle="#fff4bd";ctx.fillRect(0,(y-2)*30,300,30);}});
-    else if(effect.kind==="lock") {ctx.fillStyle="#ffffff";effect.cells.forEach(({x,y})=>{if(y>=2)ctx.fillRect(x*30+1,(y-2)*30+1,28,28);});}
+    else if(effect.kind==="lock") {ctx.fillStyle="#ffffff";effect.cells.forEach(({x,y})=>{if(y>=2){ctx.beginPath();ctx.roundRect(x*30+1,(y-2)*30+1,28,28,6);ctx.fill();}});}
     else if(!reducedMotion.matches)effect.cells.forEach(({x,y})=>{
       const top=Math.max(0,(y-2)*30),bottom=(y+effect.distance-1)*30,gradient=ctx.createLinearGradient(0,top,0,Math.max(top+1,bottom));
-      gradient.addColorStop(0,"transparent");gradient.addColorStop(1,effect.color);ctx.fillStyle=gradient;ctx.fillRect(x*30+5,top,20,Math.max(0,bottom-top));
+      gradient.addColorStop(0,"transparent");gradient.addColorStop(1,BlockSkins.color(prefs.skin,effect.color));ctx.fillStyle=gradient;ctx.fillRect(x*30+5,top,20,Math.max(0,bottom-top));
     });ctx.restore();
   });
   if(now>=feedbackUntil)$("#board-feedback").classList.remove("visible");
@@ -203,7 +216,7 @@ $("#result-retry").onclick=()=>{start();$(".board-column").scrollIntoView({block
 document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>selectMode(b.dataset.mode));
 document.querySelectorAll("[data-control]").forEach(b=>b.onclick=()=>action(b.dataset.control));
 document.addEventListener("keydown",e=>{
-  if(dialog.open||e.ctrlKey||e.metaKey||e.altKey)return;
+  if(dialog.open||skinsDialog.open||e.ctrlKey||e.metaKey||e.altKey)return;
   const k=e.code==="Space"?"Space":e.key;
   if(["ArrowLeft","ArrowRight","ArrowDown","ArrowUp","Space"].includes(k)&&phase!=="ready")e.preventDefault();
   if(e.repeat)return;if(k.toLowerCase()==="r") {start();return;}
@@ -235,4 +248,29 @@ $("#sfx-input").onchange=()=>play("rotate");
   $(`#${id}-input`).onchange=e=>{prefs[key]=e.target.checked;if(!prefs.effects) {effects=[];feedbackUntil=0;}syncSettings();draw(performance.now());};
 });
 dialog.addEventListener("close",()=>{resetInput();write(SETTINGS,prefs);});
+function syncSkinSelection() {
+  const skin=BlockSkins.get(prefs.skin);
+  $("#current-skin-name").textContent=skin.name;
+  $("#skin-selection-status").textContent=`${skin.name} · ${skin.description}`;
+  document.querySelectorAll("[data-skin]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.skin===skin.id)));
+}
+function selectSkin(id) {
+  prefs.skin=BlockSkins.get(id).id;skinTiles.clear();resetInput();write(SETTINGS,prefs);
+  syncSkinSelection();drawPreviews();draw(performance.now());
+}
+function buildSkinOptions() {
+  $("#skin-options").replaceChildren(...BlockSkins.catalog.map(skin=>{
+    const button=document.createElement("button");button.type="button";button.className="skin-option";button.dataset.skin=skin.id;button.setAttribute("aria-label",`${skin.name}: ${skin.description}`);
+    const art=document.createElement("span");art.className="skin-art";art.style.background=skin.swatch;
+    const c=document.createElement("canvas");c.width=200;c.height=160;c.setAttribute("aria-hidden","true");const context=c.getContext("2d");context.scale(2,2);
+    [[1,0],[0,1],[1,1],[2,1]].forEach(([x,y])=>BlockSkins.draw(context,8+x*28,10+y*28,28,"T",skin.id));
+    art.append(c);button.append(art);
+    [["skin-name",skin.name],["skin-english",skin.english],["skin-tag",skin.tag],["skin-check","✓"]].forEach(([className,text])=>{const span=document.createElement("span");span.className=className;span.textContent=text;if(className==="skin-check")span.setAttribute("aria-hidden","true");button.append(span);});
+    button.onclick=()=>selectSkin(skin.id);return button;
+  }));syncSkinSelection();
+}
+$("#skins-button").onclick=()=>{resetInput();$(".skin-playing-note").hidden=!["playing","countdown"].includes(phase);syncSkinSelection();skinsDialog.showModal();};
+$("#close-skins").onclick=()=>skinsDialog.close();$("#done-skins").onclick=()=>skinsDialog.close();
+skinsDialog.addEventListener("close",resetInput);
+buildSkinOptions();
 syncSettings();selectMode("sprint");
