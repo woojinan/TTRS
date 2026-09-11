@@ -18,6 +18,5 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 @app.get("/", include_in_schema=False)
 async def index() -> FileResponse:
-    """Serve the first Korean-language lobby screen."""
+    """Serve the sprint and time-attack game screen."""
     return FileResponse(FRONTEND_DIR / "index.html")
-

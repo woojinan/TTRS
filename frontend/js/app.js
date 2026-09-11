@@ -1,42 +1,238 @@
-const W=10,H=22,VISIBLE=20,CELL=30,BEST="ttrs-40-lines-best",SETTINGS="ttrs-input-settings";
-const PIECES={I:{c:"#35c9d6",m:[[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]]},O:{c:"#f2d247",m:[[1,1],[1,1]]},T:{c:"#a66be0",m:[[0,1,0],[1,1,1],[0,0,0]]},S:{c:"#52bd72",m:[[0,1,1],[1,1,0],[0,0,0]]},Z:{c:"#e75656",m:[[1,1,0],[0,1,1],[0,0,0]]},J:{c:"#518ce2",m:[[1,0,0],[1,1,1],[0,0,0]]},L:{c:"#e99549",m:[[0,0,1],[1,1,1],[0,0,0]]}};
-const JL={"0>1":[[0,0],[-1,0],[-1,-1],[0,2],[-1,2]],"1>0":[[0,0],[1,0],[1,1],[0,-2],[1,-2]],"1>2":[[0,0],[1,0],[1,1],[0,-2],[1,-2]],"2>1":[[0,0],[-1,0],[-1,-1],[0,2],[-1,2]],"2>3":[[0,0],[1,0],[1,-1],[0,2],[1,2]],"3>2":[[0,0],[-1,0],[-1,1],[0,-2],[-1,-2]],"3>0":[[0,0],[-1,0],[-1,1],[0,-2],[-1,-2]],"0>3":[[0,0],[1,0],[1,-1],[0,2],[1,2]]};
-const IK={"0>1":[[0,0],[-2,0],[1,0],[-2,1],[1,-2]],"1>0":[[0,0],[2,0],[-1,0],[2,-1],[-1,2]],"1>2":[[0,0],[-1,0],[2,0],[-1,-2],[2,1]],"2>1":[[0,0],[1,0],[-2,0],[1,2],[-2,-1]],"2>3":[[0,0],[2,0],[-1,0],[2,-1],[-1,2]],"3>2":[[0,0],[-2,0],[1,0],[-2,1],[1,-2]],"3>0":[[0,0],[1,0],[-2,0],[1,2],[-2,-1]],"0>3":[[0,0],[-1,0],[2,0],[-1,-2],[2,1]]};
-const boardCanvas=document.querySelector("#board"),ctx=boardCanvas.getContext("2d"),holdCtx=document.querySelector("#hold").getContext("2d"),nextList=document.querySelector("#next-list"),linesEl=document.querySelector("#lines"),timeEl=document.querySelector("#time"),bestEl=document.querySelector("#best"),scoreEl=document.querySelector("#score"),levelEl=document.querySelector("#level"),eventEl=document.querySelector("#event-text"),comboEl=document.querySelector("#combo-text"),b2bEl=document.querySelector("#b2b-text"),overlay=document.querySelector("#overlay"),status=document.querySelector("#status");
-let board,queue,current,hold=null,canHold=true,running=false,lines=0,score=0,level=1,combo=-1,b2b=false,lastRotate=false,lastKick=0,startedAt=0,elapsed=0,lastFrame=0,gravityAt=0,groundedAt=null,lockResets=0,frame,keys={},repeatAt=0,softAt=0;
-let prefs={das:133,arr:10,ghost:true};try{prefs={...prefs,...JSON.parse(localStorage.getItem(SETTINGS))};}catch(_){}
-function clone(type){return {type,c:PIECES[type].c,m:PIECES[type].m.map(r=>[...r]),x:3,y:0,r:0};}
-function bag(){return Object.keys(PIECES).sort(()=>Math.random()-.5);}
-function refill(){while(queue.length<6)queue.push(...bag());}
-function newBoard(){return Array.from({length:H},()=>Array(W).fill(null));}
-function fmt(ms){const n=Math.floor(ms/10),m=Math.floor(n/6000),s=Math.floor(n/100)%60,c=n%100;return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}.${String(c).padStart(2,"0")}`;}
-function cell(context,x,y,color,size=CELL){if(y<0)return;context.fillStyle=color||"#151a1e";context.fillRect(x*size+1,y*size+1,size-2,size-2);}
-function pieceCells(piece,fn){piece.m.forEach((row,y)=>row.forEach((v,x)=>{if(v)fn(piece.x+x,piece.y+y,x,y);}));}
-function blocked(piece,dx=0,dy=0,matrix=piece.m){return matrix.some((row,y)=>row.some((v,x)=>v&&(piece.x+x+dx<0||piece.x+x+dx>=W||piece.y+y+dy>=H||(piece.y+y+dy>=0&&board[piece.y+y+dy][piece.x+x+dx]))));}
-function isGrounded(){return blocked(current,0,1);}
-function resetLock(){if(isGrounded()&&lockResets<15){groundedAt=performance.now();lockResets++;}else if(!isGrounded())groundedAt=null;}
-function rotated(m,dir){if(dir===-1)return m[0].map((_,i)=>m.map(r=>r[r.length-1-i]));return m[0].map((_,i)=>m.map(r=>r[i]).reverse());}
-function rotate(dir){if(dir===2){rotate(1);rotate(1);return;}if(!running||current.type==="O")return;const old=current.r,target=(old+(dir===-1?3:1))%4,m=rotated(current.m,dir);const tests=(current.type==="I"?IK:JL)[`${old}>${target}`]||[[0,0]];for(let i=0;i<tests.length;i++){const [x,y]=tests[i];if(!blocked(current,x,y,m)){current.x+=x;current.y+=y;current.m=m;current.r=target;lastRotate=true;lastKick=i;resetLock();return;}}}
-function move(dx){if(!running||blocked(current,dx))return false;current.x+=dx;lastRotate=false;resetLock();return true;}
-function softDrop(){if(!running)return;if(!blocked(current,0,1)){current.y++;score++;lastRotate=false;groundedAt=null;}else if(!groundedAt)groundedAt=performance.now();}
-function hardDrop(){if(!running)return;let d=0;while(!blocked(current,0,1)){current.y++;d++;}score+=d*2;lock();}
-function typeOfSpin(){if(current.type!=="T"||!lastRotate)return "";const px=current.x+1,py=current.y+1;const occupied=([x,y])=>x<0||x>=W||y>=H||(y>=0&&board[y][x]);const corners=[[px-1,py-1],[px+1,py-1],[px-1,py+1],[px+1,py+1]],solid=corners.filter(([x,y])=>occupied([x,y])).length;if(solid<3)return "";const front=[[[px-1,py-1],[px+1,py-1]],[[px+1,py-1],[px+1,py+1]],[[px-1,py+1],[px+1,py+1]],[[px-1,py-1],[px-1,py+1]]][current.r];return front.every(([x,y])=>occupied([x,y]))||lastKick===4?"T-SPIN":"T-SPIN MINI";}
-function clearRows(){let n=0;board=board.filter(row=>{if(row.every(Boolean)){n++;return false;}return true;});while(board.length<H)board.unshift(Array(W).fill(null));return n;}
-function applyScore(cleared,spin,perfect){const names=["","SINGLE","DOUBLE","TRIPLE","TETRIS"],normal=[0,100,300,500,800],tspin=[400,800,1200,1600],mini=[100,200,400];let base=spin==="T-SPIN MINI"?mini[cleared]||100:spin?tspin[cleared]||400:normal[cleared];const difficult=(cleared===4)||(spin&&cleared>0),wasB2B=b2b;if(difficult&&wasB2B)base=Math.floor(base*1.5);if(perfect)base+=3500;if(cleared){combo++;score+=base*level+(combo>0?50*combo*level:0);b2b=difficult;}else if(!spin)combo=-1;if(!cleared&&!spin)return;eventEl.textContent=`${spin?`${spin} ${names[cleared]||""}`:names[cleared]||"T-SPIN"}${perfect?" · PERFECT CLEAR":""}${wasB2B&&difficult?" · B2B":""}`.trim();comboEl.textContent=combo>0?`COMBO × ${combo}`:"COMBO —";b2bEl.textContent=b2b?"B2B ACTIVE":"B2B —";}
-function lock(){const spin=typeOfSpin();pieceCells(current,(x,y)=>{if(y>=0)board[y][x]=current.c;});const cleared=clearRows(),perfect=cleared>0&&board.every(row=>row.every(v=>!v));applyScore(cleared,spin,perfect);lines+=cleared;level=Math.floor(lines/10)+1;linesEl.innerHTML=`${Math.min(lines,40)} <small>/ 40</small>`;scoreEl.textContent=score.toLocaleString();levelEl.textContent=level;if(lines>=40){finish(true);return;}spawn();}
-function spawn(){refill();current=clone(queue.shift());refill();current.x=Math.floor((W-current.m[0].length)/2);current.y=0;canHold=true;lastRotate=false;lastKick=0;groundedAt=null;lockResets=0;if(blocked(current))finish(false);drawPreviews();}
-function holdPiece(){if(!running||!canHold)return;const old=hold;hold=current.type;if(old){current=clone(old);current.x=Math.floor((W-current.m[0].length)/2);current.y=0;if(blocked(current))finish(false);}else spawn();canHold=false;lastRotate=false;drawPreviews();}
-function drawMini(context,type,w,h){context.fillStyle="#0e1113";context.fillRect(0,0,w,h);if(!type)return;const p=clone(type),s=Math.min(20,Math.floor(Math.min(w/(p.m[0].length+2),h/(p.m.length+2))),),ox=(w-p.m[0].length*s)/2,oy=(h-p.m.length*s)/2;context.fillStyle=p.c;p.m.forEach((row,y)=>row.forEach((v,x)=>{if(v){context.fillRect(ox+x*s+1,oy+y*s+1,s-2,s-2);}}));}
-function drawPreviews(){drawMini(holdCtx,hold,120,120);nextList.innerHTML="";queue.slice(0,5).forEach(type=>{const c=document.createElement("canvas");c.width=158;c.height=62;c.className="next-item";nextList.append(c);drawMini(c.getContext("2d"),type,158,62);});}
-function draw(){ctx.fillStyle="#101316";ctx.fillRect(0,0,300,600);board.forEach((row,y)=>row.forEach((v,x)=>{if(y>=2)cell(ctx,x,y-2,v);}));if(current&&prefs.ghost){let gy=current.y;while(!blocked({...current,y:gy},0,1))gy++;pieceCells({...current,y:gy},(x,y)=>{if(y>=2){ctx.fillStyle="rgba(210,220,225,.18)";ctx.fillRect(x*CELL+5,(y-2)*CELL+5,CELL-10,CELL-10);}});}if(current)pieceCells(current,(x,y)=>{if(y>=2)cell(ctx,x,y-2,current.c);});}
-function gravity(){return Math.max(50,Math.round(1000*Math.pow(.8-.007*(level-1),level-1)));}
-function finish(won){running=false;cancelAnimationFrame(frame);elapsed=performance.now()-startedAt;timeEl.textContent=fmt(elapsed);overlay.hidden=false;overlay.querySelector("strong").textContent=won?"COMPLETE":"GAME OVER";overlay.querySelector("span").textContent=won?`${fmt(elapsed)} · ${score.toLocaleString()} PTS`:"RESTART 또는 R 키";if(won){const old=Number(localStorage.getItem(BEST));if(!old||elapsed<old){localStorage.setItem(BEST,String(elapsed));bestEl.textContent=fmt(elapsed);status.textContent="NEW BEST · 이 브라우저에 기록을 저장했습니다.";}else status.textContent="COMPLETE · 최고 기록에 다시 도전하세요.";}}
-function processHeld(now){const dir=keys.ArrowLeft?-1:keys.ArrowRight?1:0;if(dir&&now>=repeatAt){if(prefs.arr===0){while(move(dir));repeatAt=now+16;}else{move(dir);repeatAt=now+prefs.arr;}}if(keys.ArrowDown&&now-softAt>=35){softDrop();softAt=now;}}
-function tick(now){if(!running)return;elapsed=now-startedAt;timeEl.textContent=fmt(elapsed);scoreEl.textContent=score.toLocaleString();processHeld(now);if(now-gravityAt>=gravity()&&!isGrounded()){current.y++;lastRotate=false;gravityAt=now;groundedAt=null;}if(isGrounded()){if(!groundedAt)groundedAt=now;if(now-groundedAt>=500)lock();}draw();frame=requestAnimationFrame(tick);}
-function start(){board=newBoard();queue=[];refill();hold=null;lines=0;score=0;level=1;combo=-1;b2b=false;elapsed=0;spawn();running=true;startedAt=performance.now();gravityAt=startedAt;groundedAt=null;linesEl.innerHTML="0 <small>/ 40</small>";timeEl.textContent="00:00.00";scoreEl.textContent="0";levelEl.textContent="1";eventEl.textContent="—";comboEl.textContent="COMBO —";b2bEl.textContent="B2B —";overlay.hidden=true;status.textContent="40줄을 지우면 기록이 저장됩니다.";cancelAnimationFrame(frame);draw();frame=requestAnimationFrame(tick);}
-function action(a){if(a==="left")move(-1);if(a==="right")move(1);if(a==="down")softDrop();if(a==="drop")hardDrop();if(a==="hold")holdPiece();if(a==="rotate-right")rotate(1);if(a==="rotate-left")rotate(-1);draw();}
-document.querySelector("#start-button").onclick=start;document.querySelector("#restart-button").onclick=start;document.querySelectorAll("[data-control]").forEach(b=>b.onclick=()=>action(b.dataset.control));
-document.addEventListener("keydown",e=>{const k=e.code==="Space"?"Space":e.key;if(["ArrowLeft","ArrowRight","ArrowDown","ArrowUp","Space"].includes(k))e.preventDefault();if(e.repeat)return;if(k==="r"||k==="R")return start();if(k==="c"||k==="C"||k==="Shift")return holdPiece();if(k==="ArrowUp"||k==="x"||k==="X")return rotate(1);if(k==="z"||k==="Z")return rotate(-1);if(k==="a"||k==="A")return rotate(2);if(k==="Space")return hardDrop();if(["ArrowLeft","ArrowRight","ArrowDown"].includes(k)){keys[k]=true;if(k!=="ArrowDown"){move(k==="ArrowLeft"?-1:1);repeatAt=performance.now()+prefs.das;}else softDrop();}});
-document.addEventListener("keyup",e=>{const k=e.key;keys[k]=false;if(k==="ArrowLeft"||k==="ArrowRight")repeatAt=performance.now()+prefs.das;});
-const dialog=document.querySelector("#settings-dialog"),das=document.querySelector("#das-input"),arr=document.querySelector("#arr-input"),ghost=document.querySelector("#ghost-input");function syncSettings(){das.value=prefs.das;arr.value=prefs.arr;ghost.checked=prefs.ghost;document.querySelector("#das-value").textContent=`${prefs.das} ms`;document.querySelector("#arr-value").textContent=prefs.arr===0?"INSTANT":`${prefs.arr} ms`;}document.querySelector("#settings-button").onclick=()=>{syncSettings();dialog.showModal();};das.oninput=()=>{prefs.das=Number(das.value);syncSettings();};arr.oninput=()=>{prefs.arr=Number(arr.value);syncSettings();};ghost.onchange=()=>prefs.ghost=ghost.checked;document.querySelector("#save-settings").onclick=()=>localStorage.setItem(SETTINGS,JSON.stringify(prefs));
-const saved=Number(localStorage.getItem(BEST));if(saved)bestEl.textContent=fmt(saved);board=newBoard();queue=[];refill();current=clone(queue[0]);drawPreviews();draw();
+"use strict";
+const {Game,cells,clone}=Tetris;
+const $=selector=>document.querySelector(selector);
+const BEST="ttrs-40-lines-best",ATTACK_BEST="ttrs-attack-best",SETTINGS="ttrs-input-settings",HISTORY="ttrs-run-history-v1";
+const ATTACK_MS=120000,COUNTDOWN_MS=3000;
+let storageOK=true;
+function read(key,fallback) { try { const raw=localStorage.getItem(key); return raw===null?fallback:JSON.parse(raw); } catch(_) {storageOK=false;return fallback;} }
+function write(key,value) { try {localStorage.setItem(key,JSON.stringify(value));} catch(_) {storageOK=false;storageNotice();} }
+const clamp=(v,min,max,fallback)=>Number.isFinite(Number(v))?Math.min(max,Math.max(min,Number(v))):fallback;
+const savedPrefs=read(SETTINGS,{})||{};
+let prefs={das:clamp(savedPrefs.das,0,300,133),arr:clamp(savedPrefs.arr,0,100,10),ghost:savedPrefs.ghost!==false,sfx:clamp(savedPrefs.sfx,0,100,65),music:clamp(savedPrefs.music,0,100,20),muted:savedPrefs.muted===true,effects:savedPrefs.effects!==false};
+let records=read(HISTORY,[]);
+records=Array.isArray(records)?records.filter(r=>r&&["sprint","attack"].includes(r.mode)&&[r.elapsed,r.score,r.lines,r.pps].every(n=>Number.isFinite(n)&&n>=0)&&typeof r.date==="string"&&Number.isFinite(Date.parse(r.date))&&typeof r.completed==="boolean").slice(0,20):[];
+const savedSprintBest=Number(read(BEST,0)),savedAttackBest=Number(read(ATTACK_BEST,0));
+const bests={sprint:Number.isFinite(savedSprintBest)&&savedSprintBest>0?savedSprintBest:0,attack:Number.isFinite(savedAttackBest)&&savedAttackBest>0?savedAttackBest:0};
+const sound=new GameAudio(),canvas=$("#board"),ctx=canvas.getContext("2d"),holdCtx=$("#hold").getContext("2d"),dialog=$("#settings-dialog");
+const reducedMotion=window.matchMedia("(prefers-reduced-motion: reduce)");
+let game=new Game(),mode="sprint",phase="ready",startedAt=0,countdownAt=0,countdownNumber=0,elapsed=0;
+let keys={},direction=0,repeatAt=0,softAt=0,effects=[],feedbackUntil=0,frame=null;
+function fmt(ms) {const n=Math.max(0,Math.floor(ms/10));return `${String(Math.floor(n/6000)).padStart(2,"0")}:${String(Math.floor(n/100)%60).padStart(2,"0")}.${String(n%100).padStart(2,"0")}`;}
+function storageNotice() {$("#storage-note").textContent=storageOK?"기록과 설정은 이 브라우저에 저장됩니다.":"브라우저 저장소를 사용할 수 없어 이번 접속 중에만 기록과 설정을 유지합니다.";}
+function resetInput() {keys={};direction=0;repeatAt=0;softAt=0;}
+function play(name,combo) {sound.configure(prefs);sound.play(name,combo);}
+function armFrame() {if(frame===null)frame=requestAnimationFrame(tick);}
+function remaining(now=performance.now()) {return Math.max(0,ATTACK_MS-(now-startedAt));}
+function canAct(now) {
+  if(phase!=="playing")return false;
+  if(mode==="attack"&&remaining(now)<=0) {finish(true,startedAt+ATTACK_MS);return false;}
+  return true;
+}
+function flash(text,now,special=false) {
+  if(!prefs.effects)return;
+  const node=$("#board-feedback");node.textContent=text;node.classList.toggle("special",special);node.classList.add("visible");feedbackUntil=now+750;
+}
+function afterLock(event,now,drop=false) {
+  if(!event)return;
+  if(prefs.effects) {
+    effects.push({kind:"lock",cells:event.placed,color:event.color,at:now,duration:180});
+    if(drop&&event.distance)effects.push({kind:"drop",cells:event.from,distance:event.distance,color:event.color,at:now,duration:150});
+    if(event.rows.length)effects.push({kind:"clear",rows:event.rows,at:now,duration:230});
+  }
+  const names=["","SINGLE","DOUBLE","TRIPLE","TETRIS"];
+  let label=event.spin?`${event.spin} ${names[event.rows.length]}`.trim():names[event.rows.length];
+  if(event.perfect)label="PERFECT CLEAR";
+  if(event.chained)label+=" · B2B";
+  if(label) {$("#event-text").textContent=label;flash(label,now,Boolean(event.spin)||event.rows.length===4||event.perfect);}
+  $("#combo-text").textContent=game.combo>0?`COMBO × ${game.combo}`:"COMBO —";
+  $("#b2b-text").textContent=game.b2b?"B2B ACTIVE":"B2B —";
+  play(drop?"drop":"lock");
+  if(event.rows.length||event.spin)play(event.spin||event.rows.length===4||event.perfect?"special":"clear",Math.max(0,game.combo));
+  drawPreviews();
+  if(mode==="sprint"&&game.lines>=40)finish(true,now);else if(game.over)finish(false,now);
+}
+function action(name,now=performance.now()) {
+  if(!canAct(now))return false;
+  let changed=false;
+  if(name==="left"||name==="right") {changed=game.move(name==="left"?-1:1,now);if(changed)play("move");}
+  if(name==="down") {changed=game.down(now,true);if(changed)play("move");}
+  if(name.startsWith("rotate")) {changed=game.rotate(name==="rotate-left"?-1:name==="rotate-180"?2:1,now);if(changed)play("rotate");}
+  if(name==="hold") {changed=game.holdPiece(now);if(changed) {play("hold");drawPreviews();if(game.over)finish(false,now);}}
+  if(name==="drop") {afterLock(game.hardDrop(now),now,true);changed=true;}
+  updateHud();draw(now);armFrame();return changed;
+}
+function start() {
+  sound.unlock();sound.configure(prefs);sound.stopMusic();
+  game=new Game();phase="countdown";elapsed=0;countdownAt=performance.now();countdownNumber=3;
+  effects=[];feedbackUntil=0;resetInput();
+  $("#board-feedback").classList.remove("visible");$("#result").hidden=true;
+  $("#event-text").textContent="—";$("#combo-text").textContent="COMBO —";$("#b2b-text").textContent="B2B —";
+  $("#overlay").hidden=false;$("#overlay-title").textContent="3";
+  $("#overlay-description").textContent=mode==="sprint"?"40줄 기록 도전":"2분 동안 최대 점수에 도전";
+  $("#start-button").hidden=true;setModeButtons(true);
+  $("#status").textContent="준비하세요. 카운트다운 후 기록 측정이 시작됩니다.";
+  play("count");drawPreviews();updateHud();draw(countdownAt);armFrame();
+}
+function begin(now) {
+  // Begin on the rendered GO frame, even after background-tab throttling.
+  phase="playing";startedAt=now;game.gravityAt=now;resetInput();
+  $("#overlay").hidden=true;$("#status").textContent=mode==="sprint"?"40줄 완주 · 일정한 낙하 속도 · 최고 기록에 도전하세요":"2분 점수 도전 · T스핀과 콤보로 점수를 쌓으세요";
+  flash("GO",now);play("go");sound.startMusic();
+}
+function finish(completed,now=performance.now()) {
+  if(phase!=="playing")return;
+  elapsed=mode==="attack"?Math.min(ATTACK_MS,Math.max(0,now-startedAt)):Math.max(0,now-startedAt);
+  phase="finished";resetInput();sound.stopMusic();setModeButtons(false);
+  feedbackUntil=0;$("#board-feedback").classList.remove("visible");
+  const previous=bests[mode],eligible=mode==="sprint"?completed:true,candidate=mode==="sprint"?elapsed:game.score;
+  const hasPrevious=previous>0||(mode==="attack"&&records.some(r=>r.mode==="attack"));
+  const isBest=eligible&&(!hasPrevious||(mode==="sprint"?candidate<previous:candidate>previous));
+  if(isBest) {bests[mode]=candidate;write(mode==="sprint"?BEST:ATTACK_BEST,candidate);}
+  const record={mode,completed,date:new Date().toISOString(),elapsed,score:game.score,lines:game.lines,pieces:game.pieces,pps:elapsed>0?game.pieces/(elapsed/1000):0,maxCombo:game.maxCombo,tspins:game.tspins,tetrises:game.tetrises,perfects:game.perfects};
+  records.unshift(record);const counts={sprint:0,attack:0};records=records.filter(r=>++counts[r.mode]<=10);write(HISTORY,records);
+  $("#overlay").hidden=false;$("#overlay-title").textContent=completed?mode==="attack"?"TIME UP":"COMPLETE":"GAME OVER";
+  $("#overlay-description").textContent=mode==="sprint"?`${fmt(elapsed)} · ${game.lines} LINES`:`${game.score.toLocaleString()} PTS · ${game.lines} LINES`;
+  $("#start-button").hidden=false;$("#start-button").textContent="RETRY";
+  $("#status").textContent=isBest?"NEW BEST · 새로운 최고 기록입니다!":completed?"도전 완료 · 아래에서 결과와 최근 기록을 확인하세요.":"도전 종료 · 아래에서 이번 플레이를 확인하세요.";
+  renderResult(record,previous,isBest,hasPrevious);renderHistory();updateHud();draw(now);armFrame();play(completed?"win":"lose");
+}
+function renderResult(r,previous,isBest,hasPrevious) {
+  $("#result").hidden=false;$("#result-mode").textContent=r.mode==="sprint"?"40 LINES · RUN REPORT":"TIME ATTACK · RUN REPORT";
+  $("#result-title").textContent=isBest?"NEW PERSONAL BEST":r.completed?"CHALLENGE COMPLETE":"RUN FINISHED";
+  $("#result-primary").textContent=r.mode==="sprint"?fmt(r.elapsed):`${r.score.toLocaleString()} PTS`;
+  let comparison="첫 기록입니다. 다음 도전에서 기록을 비교해보세요.";
+  if(r.mode==="sprint"&&!r.completed)comparison=`${r.lines}줄에서 종료 · 40줄을 완주하면 최고 시간에 반영됩니다.`;
+  else if(hasPrevious) {
+    const delta=r.mode==="sprint"?r.elapsed-previous:r.score-previous;
+    comparison=delta===0?"이전 최고 기록과 동률입니다.":r.mode==="sprint"?`이전 최고 기록보다 ${(Math.abs(delta)/1000).toFixed(2)}초 ${delta<0?"단축했습니다":"더 걸렸습니다"}.`:`이전 최고 기록보다 ${Math.abs(delta).toLocaleString()}점 ${delta>0?"높습니다":"낮습니다"}.`;
+  }
+  if(r.mode==="attack"&&!r.completed)comparison+=" · 블록이 쌓여 조기 종료되었습니다.";
+  $("#result-comparison").textContent=comparison;
+  const stats=[["플레이 시간",fmt(r.elapsed)],["점수",r.score.toLocaleString()],["삭제한 줄",r.lines],["놓은 블록",r.pieces],["초당 블록",r.pps.toFixed(2)],["최대 콤보",r.maxCombo],["T-SPIN",r.tspins],["TETRIS",r.tetrises],["PERFECT CLEAR",r.perfects]];
+  $("#result-stats").replaceChildren(...stats.map(([label,value])=>{const div=document.createElement("div"),dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=label;dd.textContent=value;div.append(dt,dd);return div;}));
+}
+function renderHistory() {
+  const list=records.filter(r=>r.mode===mode).slice(0,10);
+  $("#history-empty").hidden=list.length>0;$("#history-table").hidden=!list.length;
+  $("#history-body").replaceChildren(...list.map(r=>{
+    const row=document.createElement("tr"),values=[new Date(r.date).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}),r.completed?"완료":"종료",fmt(r.elapsed),r.score.toLocaleString(),r.lines,r.pps.toFixed(2)];
+    values.forEach(value=>{const td=document.createElement("td");td.textContent=value;row.append(td);});return row;
+  }));storageNotice();
+}
+function setModeButtons(disabled) {document.querySelectorAll("[data-mode]").forEach(b=>{b.disabled=disabled;});}
+function selectMode(next) {
+  if(!["ready","finished"].includes(phase)||!["sprint","attack"].includes(next))return;
+  mode=next;phase="ready";game=new Game();elapsed=0;effects=[];resetInput();
+  $("#game-title").textContent=mode==="sprint"?"40 LINES":"TIME ATTACK";document.title=`${$("#game-title").textContent} · TETRIS`;
+  $("#mode-eyebrow").textContent=mode==="sprint"?"SOLO SPRINT · 40 LINE CHALLENGE":"SCORE CHALLENGE · 120 SECONDS";
+  $("#time-label").textContent=mode==="sprint"?"TIME":"TIME LEFT";$("#best-label").textContent=mode==="sprint"?"BEST TIME":"BEST SCORE";
+  document.querySelectorAll("[data-mode]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.mode===mode)));
+  $("#result").hidden=true;$("#overlay").hidden=false;$("#overlay-title").textContent="READY";
+  $("#overlay-description").textContent=mode==="sprint"?"40줄을 가장 빠르게 지워보세요":"2분 동안 최대 점수에 도전하세요";
+  $("#start-button").hidden=false;$("#start-button").textContent="START";
+  $("#board-feedback").classList.remove("visible");feedbackUntil=0;
+  $("#event-text").textContent="—";$("#combo-text").textContent="COMBO —";$("#b2b-text").textContent="B2B —";
+  $("#status").textContent=mode==="sprint"?"40줄 완주 · 일정한 낙하 속도 · 최고 기록에 도전하세요":"2분 점수 도전 · 일정한 낙하 속도 · 최고 점수에 도전하세요";
+  drawPreviews();updateHud();renderHistory();draw(performance.now());
+}
+function updateHud() {
+  $("#lines").innerHTML=mode==="sprint"?`${Math.min(game.lines,40)} <small>/ 40</small>`:String(game.lines);
+  $("#time").textContent=fmt(mode==="attack"?ATTACK_MS-elapsed:elapsed);$("#score").textContent=game.score.toLocaleString();
+  $("#best").textContent=mode==="sprint"?bests.sprint?fmt(bests.sprint):"--:--.--":bests.attack.toLocaleString();
+  $("#pps").textContent=elapsed>0?(game.pieces/(elapsed/1000)).toFixed(2):"0.00";
+  const progress=$("#progress");progress.max=mode==="sprint"?40:ATTACK_MS;progress.value=mode==="sprint"?Math.min(game.lines,40):elapsed;
+  $("#progress-label").textContent=mode==="sprint"?`${Math.max(0,40-game.lines)}줄 남음`:`${Math.ceil((ATTACK_MS-elapsed)/1000)}초 남음`;
+  $("#progress-value").textContent=`${Math.floor(progress.value/progress.max*100)}%`;
+  $(".board-column").classList.toggle("final-stretch",phase==="playing"&&(mode==="sprint"?game.lines>=30:elapsed>=110000));
+}
+function drawMini(context,type,w,h) {
+  context.clearRect(0,0,w,h);if(!type)return;
+  const p=clone(type),occupied=cells(p),minX=Math.min(...occupied.map(c=>c.x)),minY=Math.min(...occupied.map(c=>c.y));
+  const cols=Math.max(...occupied.map(c=>c.x))-minX+1,rows=Math.max(...occupied.map(c=>c.y))-minY+1,s=20;
+  context.fillStyle=p.c;occupied.forEach(({x,y})=>context.fillRect((w-cols*s)/2+(x-minX)*s+1,(h-rows*s)/2+(y-minY)*s+1,s-2,s-2));
+}
+function drawPreviews() {
+  drawMini(holdCtx,game.hold,120,120);$("#hold").style.opacity=game.canHold?"1":".4";
+  $("#next-list").replaceChildren(...game.queue.slice(0,5).map(type=>{const c=document.createElement("canvas");c.width=158;c.height=62;c.className="next-item";drawMini(c.getContext("2d"),type,158,62);return c;}));
+}
+function block(x,y,color) {
+  if(y<2)return;const px=x*30,py=(y-2)*30;
+  ctx.fillStyle=color||"#151a1e";ctx.fillRect(px+1,py+1,28,28);
+  if(color) {ctx.fillStyle="#ffffff25";ctx.fillRect(px+2,py+2,26,2);}
+}
+function draw(now) {
+  ctx.clearRect(0,0,300,600);ctx.fillStyle="#101316";ctx.fillRect(0,0,300,600);
+  game.board.forEach((row,y)=>row.forEach((v,x)=>block(x,y,v)));
+  if(phase!=="finished"&&!game.over) {
+    if(prefs.ghost) {const ghost={...game.current};while(!game.blocked(ghost,0,1))ghost.y++;ctx.strokeStyle="#d2dce15a";ctx.lineWidth=1;cells(ghost).forEach(({x,y})=>{if(y>=2)ctx.strokeRect(x*30+4,(y-2)*30+4,22,22);});}
+    cells(game.current).forEach(({x,y})=>block(x,y,game.current.c));
+  }
+  effects=effects.filter(e=>now-e.at<e.duration);
+  if(prefs.effects)effects.forEach(effect=>{
+    const fade=Math.max(0,1-(now-effect.at)/effect.duration);ctx.save();ctx.globalAlpha=fade*(reducedMotion.matches?.2:.65);
+    if(effect.kind==="clear")effect.rows.forEach(y=>{if(y>=2) {ctx.fillStyle="#fff4bd";ctx.fillRect(0,(y-2)*30,300,30);}});
+    else if(effect.kind==="lock") {ctx.fillStyle="#ffffff";effect.cells.forEach(({x,y})=>{if(y>=2)ctx.fillRect(x*30+1,(y-2)*30+1,28,28);});}
+    else if(!reducedMotion.matches)effect.cells.forEach(({x,y})=>{
+      const top=Math.max(0,(y-2)*30),bottom=(y+effect.distance-1)*30,gradient=ctx.createLinearGradient(0,top,0,Math.max(top+1,bottom));
+      gradient.addColorStop(0,"transparent");gradient.addColorStop(1,effect.color);ctx.fillStyle=gradient;ctx.fillRect(x*30+5,top,20,Math.max(0,bottom-top));
+    });ctx.restore();
+  });
+  if(now>=feedbackUntil)$("#board-feedback").classList.remove("visible");
+}
+function processHeld(now) {
+  if(direction&&now>=repeatAt) {
+    if(prefs.arr===0) {while(game.move(direction,now)){}repeatAt=now+16;}
+    else {let count=0;while(now>=repeatAt&&count++<10) {if(game.move(direction,now))play("move");repeatAt+=prefs.arr;}if(now>=repeatAt)repeatAt=now+prefs.arr;}
+  }
+  if(keys.ArrowDown&&now>=softAt) {let count=0;while(now>=softAt&&count++<22) {game.down(now,true);softAt+=35;}if(now>=softAt)softAt=now+35;}
+}
+function tick(now) {
+  frame=null;
+  if(phase==="countdown") {
+    const count=Math.ceil((COUNTDOWN_MS-(now-countdownAt))/1000);
+    if(count<=0)begin(now);else if(count!==countdownNumber) {countdownNumber=count;$("#overlay-title").textContent=String(count);play("count");}
+  }
+  if(phase==="playing") {
+    if(mode==="attack"&&remaining(now)<=0)finish(true,startedAt+ATTACK_MS);
+    else {elapsed=Math.max(0,now-startedAt);processHeld(now);afterLock(game.update(now),now);}
+  }
+  updateHud();draw(now);if(phase==="playing"||phase==="countdown"||effects.length||now<feedbackUntil)armFrame();
+}
+$("#start-button").onclick=start;$("#restart-button").onclick=start;
+$("#result-retry").onclick=()=>{start();$(".board-column").scrollIntoView({block:"center",behavior:"instant"});};
+document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>selectMode(b.dataset.mode));
+document.querySelectorAll("[data-control]").forEach(b=>b.onclick=()=>action(b.dataset.control));
+document.addEventListener("keydown",e=>{
+  if(dialog.open||e.ctrlKey||e.metaKey||e.altKey)return;
+  const k=e.code==="Space"?"Space":e.key;
+  if(["ArrowLeft","ArrowRight","ArrowDown","ArrowUp","Space"].includes(k)&&phase!=="ready")e.preventDefault();
+  if(e.repeat)return;if(k.toLowerCase()==="r") {start();return;}
+  const now=performance.now();if(!canAct(now))return;
+  const mapped={c:"hold",Shift:"hold",ArrowUp:"rotate-right",x:"rotate-right",z:"rotate-left",a:"rotate-180",Space:"drop"};
+  if(mapped[k]||mapped[k.toLowerCase()]) {action(mapped[k]||mapped[k.toLowerCase()],now);return;}
+  if(["ArrowLeft","ArrowRight","ArrowDown"].includes(k)) {
+    keys[k]=true;
+    if(k==="ArrowDown") {action("down",now);softAt=now+35;}
+    else {direction=k==="ArrowLeft"?-1:1;action(direction<0?"left":"right",now);repeatAt=now+prefs.das;}
+  }
+});
+document.addEventListener("keyup",e=>{
+  keys[e.key]=false;
+  if(e.key==="ArrowLeft"||e.key==="ArrowRight") {
+    const released=e.key==="ArrowLeft"?-1:1;
+    if(released===direction) {direction=keys.ArrowLeft?-1:keys.ArrowRight?1:0;repeatAt=performance.now()+prefs.das;}
+  }
+});
+window.addEventListener("blur",resetInput);document.addEventListener("visibilitychange",()=>{if(document.hidden)resetInput();});
+function syncSettings() {
+  ["das","arr","sfx","music"].forEach(key=>{$(`#${key}-input`).value=prefs[key];$(`#${key}-value`).textContent=key==="arr"&&prefs.arr===0?"INSTANT":`${prefs[key]}${["das","arr"].includes(key)?" ms":"%"}`;});
+  $("#ghost-input").checked=prefs.ghost;$("#mute-input").checked=prefs.muted;$("#effects-input").checked=prefs.effects;sound.configure(prefs);
+}
+$("#settings-button").onclick=()=>{resetInput();sound.unlock();syncSettings();dialog.showModal();};
+["das","arr","sfx","music"].forEach(key=>{$(`#${key}-input`).oninput=e=>{prefs[key]=Number(e.target.value);syncSettings();};});
+$("#sfx-input").onchange=()=>play("rotate");
+[["ghost","ghost"],["mute","muted"],["effects","effects"]].forEach(([id,key])=>{
+  $(`#${id}-input`).onchange=e=>{prefs[key]=e.target.checked;if(!prefs.effects) {effects=[];feedbackUntil=0;}syncSettings();draw(performance.now());};
+});
+dialog.addEventListener("close",()=>{resetInput();write(SETTINGS,prefs);});
+syncSettings();selectMode("sprint");
