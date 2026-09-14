@@ -115,7 +115,25 @@
       }
       return null;
     }
+    // Called between pieces. Garbage never interrupts a falling piece.
+    addGarbage(holes,now) {
+      if(this.over||!holes.length)return;
+      for(const hole of holes) {
+        if(this.board.shift().some(Boolean))this.over=true;
+        this.board.push(Array.from({length:W},(_,x)=>x===hole?null:"#647580"));
+      }
+      this.over=this.over||this.blocked();
+      this.gravityAt=now;this.groundedAt=null;
+    }
   }
-  const api={Game,PIECES,W,H,bag,clone,cells,scoreClear};
+  function seededRandom(seed) {
+    return ()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t^=t+Math.imul(t^t>>>7,61|t);return ((t^t>>>14)>>>0)/4294967296;};
+  }
+  function attackLines(event) {
+    const n=event.rows.length;if(!n)return 0;
+    const base=event.spin==="T-SPIN MINI"?([0,0,1][n]||0):event.spin?([0,2,4,6][n]||0):([0,0,1,2,4][n]||0);
+    return base+(event.chained?1:0)+Math.min(4,Math.floor((Math.max(0,event.combo)+1)/2))+(event.perfect?10:0);
+  }
+  const api={Game,PIECES,W,H,bag,clone,cells,scoreClear,seededRandom,attackLines};
   if(typeof module!=="undefined"&&module.exports)module.exports=api; else root.Tetris=api;
 })(globalThis);

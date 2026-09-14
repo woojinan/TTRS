@@ -175,7 +175,7 @@ function block(x,y,color) {
 }
 function draw(now) {
   // The 2px gaps between empty cells reveal this lighter fill as the board grid.
-  ctx.clearRect(0,0,300,600);ctx.fillStyle="#223151";ctx.fillRect(0,0,300,600);
+  ctx.clearRect(0,0,300,600);ctx.fillStyle="#33486b";ctx.fillRect(0,0,300,600);
   game.board.forEach((row,y)=>row.forEach((v,x)=>block(x,y,v)));
   if(phase!=="finished"&&!game.over) {
     if(prefs.ghost) {const ghost={...game.current};while(!game.blocked(ghost,0,1))ghost.y++;cells(ghost).forEach(({x,y})=>{if(y>=2)paintBlock(ctx,x*30,(y-2)*30,30,game.current.c,true);});}
@@ -274,4 +274,4 @@ $("#skins-button").onclick=()=>{resetInput();$(".skin-playing-note").hidden=!["p
 $("#close-skins").onclick=()=>skinsDialog.close();$("#done-skins").onclick=()=>skinsDialog.close();
 skinsDialog.addEventListener("close",resetInput);
 buildSkinOptions();
-syncSettings();selectMode("sprint");
+syncSettings();selectMode(new URLSearchParams(location.search).get("mode")==="attack"?"attack":"sprint");

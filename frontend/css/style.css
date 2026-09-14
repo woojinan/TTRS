@@ -59,6 +59,9 @@ button:focus-visible,input:focus-visible,a:focus-visible { outline:3px solid #4a
 .mode-dot { width:8px; height:8px; border-radius:50%; background:#c3cfdf; margin-left:auto; }
 [aria-pressed=true]>.mode-dot { background:var(--accent); box-shadow:0 0 0 4px #ffffffd9; }
 .mode-switch button:disabled:not([aria-pressed=true]) { opacity:.55; }
+.online-entry { display:flex; justify-content:space-between; align-items:center; gap:12px; max-width:768px; margin:0 auto 18px; padding:13px 17px; border:1px solid #b9cdef; border-radius:15px; background:#e1ebfb; color:#254c93; text-decoration:none; font-size:.73rem; }
+.online-entry>span:first-child { font-weight:800; letter-spacing:.04em; }
+@media(max-width:620px) { .online-entry { flex-wrap:wrap; font-size:.63rem; gap:7px; } }
 .game-layout { display:grid; grid-template-columns:180px 300px 180px; gap:22px; justify-content:center; align-items:start; max-width:768px; margin:auto; padding:18px 18px 20px; background:#f3f6fbf5; border:1px solid #cfd9e7; border-radius:30px; box-shadow:var(--shadow-frame); }
 .column { display:grid; gap:14px; padding-top:30px; min-width:0; }
 .panel { background:var(--card); border:1px solid var(--border); border-radius:20px; box-shadow:var(--shadow); overflow:hidden; }
