@@ -24,8 +24,8 @@ class CDP {
   self(){return this.state?.players.find(p=>p.id===this.id);}
   async shot(name){const m=await this.send('Page.getLayoutMetrics');const {width,height}=m.cssContentSize;const r=await this.send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true,clip:{x:0,y:0,width,height,scale:1}});fs.writeFileSync(path.join(out,name),Buffer.from(r.data,'base64'));}
 }
-async function page(){const {browserContextId}=await browser.send('Target.createBrowserContext');const {targetId}=await browser.send('Target.createTarget',{url:'about:blank',browserContextId});const {targetInfos}=await browser.send('Target.getTargets');assert.ok(targetInfos.some(t=>t.targetId===targetId));const targets=await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();const p=new CDP(targets.find(t=>t.id===targetId).webSocketDebuggerUrl);p.context=browserContextId;
-  await p.send('Runtime.enable');await p.send('Page.enable');await p.send('Network.enable');await p.send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});await p.send('Page.navigate',{url:base+'/battle'});await until(()=>p.eval(`document.body.dataset.connected==='true'`));return p;
+async function page(route='/battle'){const {browserContextId}=await browser.send('Target.createBrowserContext');const {targetId}=await browser.send('Target.createTarget',{url:'about:blank',browserContextId});const {targetInfos}=await browser.send('Target.getTargets');assert.ok(targetInfos.some(t=>t.targetId===targetId));const targets=await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();const p=new CDP(targets.find(t=>t.id===targetId).webSocketDebuggerUrl);p.context=browserContextId;
+  await p.send('Runtime.enable');await p.send('Page.enable');await p.send('Network.enable');await p.send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});await p.send('Page.navigate',{url:base+route});await until(()=>p.eval(route==='/battle'?`document.body.dataset.connected==='true'`:`typeof drawPreviews==='function'&&document.readyState==='complete'`));return p;
 }
 async function check(name,fn){await fn();console.log(`PASS ${++passed}: ${name}`);}
 async function fits(page,label){const d=await page.eval(`(()=>{const w=document.documentElement.clientWidth;return{width:w,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(e=>e.getBoundingClientRect().right>w+1).map(e=>e.id||e.className||e.tagName).slice(0,20)};})()`);assert.ok(d.scroll<=d.width,`${label}: ${JSON.stringify(d)}`);}
@@ -66,6 +66,17 @@ let port;
     const msg='<img src=x onerror=alert(1)> 안녕!';await a.fill('#chat-input',msg);await a.key('Enter','Enter');await until(()=>b.eval(`document.querySelector('#chat-messages').textContent.includes('안녕!')`));assert.equal(await b.eval(`document.querySelector('#chat-messages img')===null`),true);assert.equal(await c.eval(`document.querySelector('#chat-messages').textContent.includes('안녕!')`),false);await a.key('Escape','Escape');
     await b.fill('#chat-input','준비됐어!');await b.click('#chat-send');await until(()=>a.eval(`document.querySelector('#chat-messages').textContent.includes('준비됐어!')`));await b.eval('document.activeElement.blur()');
   });
+  await check('solo-size board, left HOLD, vertical NEXT and compact opponent; previews match solo pixels',async()=>{
+    const geometry=await a.eval(`(()=>{const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right};};return{board:rect('#self-board'),hold:rect('#duel-hold'),next:[...document.querySelectorAll('#duel-next canvas')].map(c=>({x:c.getBoundingClientRect().x,y:c.getBoundingClientRect().y})),rival:rect('#opponent-board')};})()`);
+    assert.equal(geometry.board.width,300);assert.equal(geometry.board.height,600);assert.ok(geometry.hold.right<geometry.board.x);assert.equal(geometry.next.length,5);
+    geometry.next.forEach((r,i)=>{assert.ok(r.x>geometry.board.right);if(i)assert.ok(r.y>geometry.next[i-1].y);});assert.ok(geometry.rival.width<geometry.board.width/2);assert.ok(geometry.rival.x>geometry.next[0].x);
+    const p=a.self(),solo=await page('/');
+    await solo.eval(`prefs.skin=${JSON.stringify(p.skin)};game.queue=${JSON.stringify(p.queue)};game.hold=${JSON.stringify(p.hold)};drawPreviews();`);
+    const soloPixels=await solo.eval(`[document.querySelector('#hold'),...document.querySelectorAll('#next-list canvas')].map(c=>c.toDataURL())`);
+    const duelPixels=await a.eval(`[document.querySelector('#duel-hold'),...document.querySelectorAll('#duel-next canvas')].map(c=>c.toDataURL())`);
+    assert.deepEqual(duelPixels,soloPixels);assert.deepEqual(await a.eval(`[...document.querySelectorAll('#duel-next canvas')].map(c=>c.dataset.piece)`),p.queue.slice(0,5));
+    await browser.send('Target.disposeBrowserContext',{browserContextId:solo.context});
+  });
   await check('legal placements create real attacks; delayed garbage reaches opponent',async()=>{
     for(let i=0;i<100&&a.self().sent===0;i++){
       const before=a.self().pieces,p=plan(a.self());assert.ok(p);for(let r=0;r<p.turns;r++)await a.key('KeyX','x');await delay(60);const from=a.self().current.x;for(let dx=0;dx<Math.abs(p.x-from);dx++)await a.key(p.x<from?'ArrowLeft':'ArrowRight');await a.key('Space',' ');await until(()=>a.self().pieces>before);assert.equal(a.state.phase,'playing');
@@ -81,7 +92,7 @@ let port;
     await c.click('#leave-room');await until(()=>c.eval(`!document.querySelector('#lobby').hidden`));const code=await a.eval(`document.querySelector('#room-code').textContent`);await c.fill('#join-code',code);await c.click('#join-room');await until(()=>a.eval(`document.querySelector('#opponent-name').textContent!=='참가 대기 중'`));
   });
   await check('duel lobby/room fits 320-1440px and touch controls work',async()=>{
-    for(const width of [320,390,620,768,1024,1440]){await a.send('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:false});await fits(a,`room at ${width}`);}
+    for(const width of [320,390,620,621,768,800,801,1000,1024,1100,1101,1440]){await a.send('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:false});await fits(a,`room at ${width}`);}
     await a.send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});await a.shot('duel-04-mobile.png');
     await a.click('#ready-button');await c.click('#ready-button');await until(()=>a.state?.phase==='playing',6000);const before=a.self().pieces;await a.click('[data-action="drop"]');await until(()=>a.self().pieces>before);
     await a.click('#leave-room');await a.click('#confirm-exit');await until(()=>a.eval(`!document.querySelector('#lobby').hidden`));for(const width of [320,390,768,1440]){await a.send('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:false});await fits(a,`lobby at ${width}`);}await a.shot('duel-05-lobby.png');

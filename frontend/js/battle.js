@@ -8,6 +8,8 @@
   for(const [key,max] of [['das',300],['arr',100],['sfx',100],['music',100]])if(Number.isFinite(saved?.[key]))prefs[key]=Math.max(0,Math.min(max,saved[key]));
   let socket=null,selfId=null,room=null,latest=null,seq=0,lastEvent=null,feedbackTimer=null,connectTimer=null,retryTimer=null,closing=false,exitAction=null,lastPong=0;
   const held=new Set(),tiles=new Map();
+  const nextCanvases=Array.from({length:5},(_,i)=>{const c=document.createElement('canvas');c.width=316;c.height=104;c.className='next-item';c.setAttribute('aria-label',`다음 ${i+1}번 블록`);return c;});
+  $('#duel-next').replaceChildren(...nextCanvases);
   $('#nickname').value=String(read(NAME,'플레이어')).slice(0,16);
   $('#battle-das').value=prefs.das;$('#battle-arr').value=prefs.arr;$('#battle-mute').checked=prefs.muted;
   $('#battle-skin').replaceChildren(...BlockSkins.catalog.map(s=>{const o=document.createElement('option');o.value=s.id;o.textContent=`${s.name} · ${s.english}`;return o;}));$('#battle-skin').value=prefs.skin;
@@ -48,7 +50,7 @@
     if(m.type==='joined'){
       notify('');$('#lobby').hidden=true;$('#room').hidden=false;$('#chat-messages').replaceChildren();latest=null;lastEvent=null;
       systemMessage('친구에게 방 코드나 초대 링크를 공유하세요.');for(const entry of m.chat)addChat(entry);
-      renderBoard($('#self-board'),null);renderBoard($('#opponent-board'),null);return;
+      renderBoard($('#self-board'),null);renderBoard($('#opponent-board'),null);renderPreviews(null);return;
     }
     if(m.type==='left'){showLobby();notify('');return;}
     if(m.type==='room'){
@@ -59,7 +61,7 @@
       $('#ready-button').hidden=active();$('#ready-button').textContent=mine?.ready?'준비 취소':m.phase==='finished'?'다시 준비':'준비 완료';$('#ready-button').disabled=!mine;
       $('#forfeit-button').hidden=!active();
       if(previous&&previous.players.length>m.players.length)systemMessage('상대가 방을 나갔습니다. 새 상대를 기다립니다.');
-      if(!other){renderBoard($('#opponent-board'),null);$('#opponent-pending').textContent='0';$('#opponent-sent').textContent='0';$('#opponent-lines').textContent='0';}
+      if(!other)renderBoard($('#opponent-board'),null);
       if(m.match!==previous?.match){seq=0;lastEvent=null;release();}
       if(m.phase==='finished'&&previous?.phase!=='finished'){audio.stopMusic();held.clear();audio.play(m.result?.winner===selfId?'win':'lose');systemMessage(resultText(m.result));}
       if(m.phase==='playing'&&previous?.phase!=='playing'){
@@ -72,11 +74,11 @@
       latest=m;
       const mine=m.players.find(p=>p.id===selfId),other=m.players.find(p=>p.id!==selfId);
       renderBoard($('#self-board'),mine,true);renderBoard($('#opponent-board'),other);renderPreviews(mine);
-      for(const [prefix,p] of [['self',mine],['opponent',other]]){for(const field of ['sent','lines','pending'])$(`#${prefix}-${field}`).textContent=String(p?.[field]||0);}
+      for(const field of ['sent','lines','pending'])$(`#self-${field}`).textContent=String(mine?.[field]||0);
       $('#self-pps').textContent=m.elapsed>0?((mine?.pieces||0)/(m.elapsed/1000)).toFixed(2):'0.00';$('#garbage-meter').value=Math.min(20,mine?.pending||0);
       $('#self-garbage-hint').textContent=mine?.mature?'다음 미삭제 착지 때 상승':mine?.pending?'공격 예고 · 지금 상쇄하세요':'공격하면 먼저 상쇄돼요';
       const e=mine?.event;if(e&&e.id!==lastEvent){lastEvent=e.id;if(e.action==='lock'){audio.play(e.lines?'clear':'drop');if(prefs.effects){$('#self-feedback').textContent=eventText(e);clearTimeout(feedbackTimer);feedbackTimer=setTimeout(()=>$('#self-feedback').textContent='',900);}}}
-      $('#opponent-event').textContent=other?.event?.action==='lock'?eventText(other.event):'상대의 플레이가 실시간으로 표시됩니다.';renderPhase();return;
+      renderPhase();return;
     }
     if(m.type==='chat'){addChat(m);return;}
     if(m.type==='expired'||m.type==='server_closed'){notify('연결이 종료되었습니다. 다시 연결하고 방에 참가해 주세요.');socket.close();}
@@ -112,8 +114,12 @@
     for(const {x,y} of Tetris.cells(p.current))if(y>=2)tile(ctx,x*30,(y-2)*30,30,p.current.c,p.skin);
   }
   function renderPreviews(p){
-    for(const [selector,types] of [['#duel-hold',[p?.hold]],['#duel-next',p?.queue||[]]]){const c=$(selector),ctx=c.getContext('2d');ctx.setTransform(2,0,0,2,0,0);ctx.clearRect(0,0,c.width/2,c.height/2);const slot=(c.width/2)/(selector==='#duel-hold'?1:5),size=10;
-      types.forEach((type,i)=>{if(!type)return;const piece=Tetris.clone(type),cells=Tetris.cells(piece),minX=Math.min(...cells.map(v=>v.x)),minY=Math.min(...cells.map(v=>v.y)),w=Math.max(...cells.map(v=>v.x))-minX+1;for(const {x,y} of cells)tile(ctx,i*slot+(slot-w*size)/2+(x-minX)*size,10+(y-minY)*size,size,piece.c,p.skin);});}
+    // Match solo preview dimensions and 20px tiles; reuse canvases on state updates.
+    const draw=(c,type)=>{const ctx=c.getContext('2d'),w=c.width/2,h=c.height/2,size=20;ctx.setTransform(2,0,0,2,0,0);ctx.clearRect(0,0,w,h);c.dataset.piece=type||'';if(!type)return;
+      const piece=Tetris.clone(type),cells=Tetris.cells(piece),minX=Math.min(...cells.map(v=>v.x)),minY=Math.min(...cells.map(v=>v.y)),cols=Math.max(...cells.map(v=>v.x))-minX+1,rows=Math.max(...cells.map(v=>v.y))-minY+1;
+      for(const {x,y} of cells)tile(ctx,(w-cols*size)/2+(x-minX)*size,(h-rows*size)/2+(y-minY)*size,size,piece.c,p.skin);
+    };
+    draw($('#duel-hold'),p?.hold);nextCanvases.forEach((c,i)=>draw(c,p?.queue?.[i]));
     $('#duel-hold').style.opacity=p?.canHold?'1':'.4';
   }
   function renderRooms(rooms){
