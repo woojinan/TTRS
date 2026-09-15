@@ -2,6 +2,7 @@
 import asyncio
 import contextlib
 import json
+import logging
 import shutil
 import subprocess
 import sys
@@ -10,12 +11,14 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from app.accounts import COOKIE
 
 router = APIRouter()
 
 
 class BattleHub:
-    def __init__(self):
+    def __init__(self, db=None):
+        self.db = db
         self.clients = {}
         self.process = None
         self.reader = None
@@ -28,7 +31,7 @@ class BattleHub:
         self.process = await asyncio.create_subprocess_exec(
             node, str(Path(__file__).with_suffix(".cjs")),
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-            limit=256 * 1024,
+            limit=2 * 1024 * 1024,
             **({"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}),
         )
         self.reader = asyncio.create_task(self.read())
@@ -45,6 +48,16 @@ class BattleHub:
         try:
             while line := await self.process.stdout.readline():
                 event = json.loads(line)
+                if event.get('kind') == 'records':
+                    if self.db:
+                        try:
+                            await asyncio.to_thread(self.db.save_battle, event['match'], event['players'], event['elapsed'])
+                        except Exception:
+                            logging.exception('Match %s could not be saved', event['match'])
+                            for queue in self.clients.values():
+                                if not queue.full():
+                                    queue.put_nowait({'type': 'error', 'message': 'DB 연결 오류로 대결 기록을 저장하지 못했습니다.'})
+                    continue
                 queue = self.clients.get(event["client"])
                 if queue is not None:
                     if queue.full():
@@ -81,25 +94,29 @@ async def battle_socket(socket: WebSocket):
         await socket.close(code=1008)
         return
     hub = socket.app.state.battle
+    identity = await asyncio.to_thread(socket.app.state.db.identity, socket.cookies.get(COOKIE))
+    if not identity or not identity['entered']:
+        await socket.close(code=4401)
+        return
     if hub.process.returncode is not None or len(hub.clients) >= 256:
         await socket.close(code=1013)
         return
     await socket.accept()
     client = uuid.uuid4().hex
-    queue = asyncio.Queue(maxsize=64)
+    queue = asyncio.Queue(maxsize=16)
     hub.clients[client] = queue
 
     async def writer():
         while True:
             message = await queue.get()
             await socket.send_json(message)
-            if message["type"] in ("expired", "server_closed"):
+            if message["type"] in ("expired", "server_closed", "duplicate"):
                 await socket.close(code=1012)
                 return
 
     output = asyncio.create_task(writer())
     try:
-        await hub.emit("connect", client)
+        await hub.emit("connect", client, {'userId': identity['id'], 'name': identity['nickname']})
         while True:
             raw = await asyncio.wait_for(socket.receive_text(), 25)
             if len(raw) > 4096:
@@ -112,6 +129,9 @@ async def battle_socket(socket: WebSocket):
                 break
             if not isinstance(message, dict):
                 await socket.close(code=1008)
+                break
+            if message.get('type') in ('ping', 'create', 'join', 'ready') and not await asyncio.to_thread(socket.app.state.db.identity, socket.cookies.get(COOKIE)):
+                await socket.close(code=4401)
                 break
             await hub.emit("message", client, message)
     except (WebSocketDisconnect, asyncio.TimeoutError, ConnectionError, RuntimeError):

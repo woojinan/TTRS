@@ -12,9 +12,16 @@ def until(ws, kind, predicate=lambda m: True):
     raise AssertionError(f"Did not receive {kind}")
 
 
+def authenticated(client):
+    client.cookies.clear()
+    user = client.get("/api/me").json()
+    assert client.post("/api/guest", json={}, headers={"X-CSRF-Token":user["csrf"]}).status_code == 200
+    return client.websocket_connect("/ws/battle")
+
+
 def test_websocket_rooms_chat_ready_and_leave():
     with TestClient(app) as client:
-        with client.websocket_connect("/ws/battle") as a, client.websocket_connect("/ws/battle") as b:
+        with authenticated(client) as a, authenticated(client) as b:
             aid = until(a, "hello")["id"]
             bid = until(b, "hello")["id"]
             a.send_json({"type": "create", "name": "가", "title": "테스트 방"})
@@ -26,9 +33,13 @@ def test_websocket_rooms_chat_ready_and_leave():
             assert until(b, "chat")["text"] == "안녕하세요 <script>"
             a.send_json({"type": "ready", "ready": True})
             b.send_json({"type": "ready", "ready": True})
+            until(a, "room", lambda m: any(p["ready"] for p in m["players"] if p["id"] != m["host"]))
+            a.send_json({"type": "start"})
             state = until(a, "state", lambda m: m["phase"] == "countdown")
             assert state["phase"] == "countdown"
-            assert state["players"][0]["queue"] == state["players"][1]["queue"]
+            other = until(b, "state", lambda m: m["phase"] == "countdown")
+            assert state["players"][0]["queue"] == other["players"][0]["queue"]
+            assert len(state["roster"]) == 2
             b.send_json({"type": "leave"})
             result = until(a, "room", lambda m: m["phase"] == "finished")["result"]
             assert result["winner"] == aid
@@ -40,21 +51,23 @@ def test_websocket_rooms_chat_ready_and_leave():
 
 def test_disconnect_and_rejoin_handover():
     with TestClient(app) as client:
-        with client.websocket_connect("/ws/battle") as a:
+        with authenticated(client) as a:
             aid = until(a, "hello")["id"]
             a.send_json({"type": "create"})
             code = until(a, "joined")["code"]
-            with client.websocket_connect("/ws/battle") as b:
+            with authenticated(client) as b:
                 until(b, "hello")
                 b.send_json({"type": "join", "code": code})
                 until(b, "joined")
                 a.send_json({"type": "ready", "ready": True})
                 b.send_json({"type": "ready", "ready": True})
+                until(a, "room", lambda m: any(p["ready"] for p in m["players"] if p["id"] != m["host"]))
+                a.send_json({"type": "start"})
                 until(a, "state", lambda m: m["phase"] == "countdown")
             result = until(a, "room", lambda m: m.get("result") is not None)["result"]
             assert result["winner"] == aid
             assert result["reason"] == "disconnect"
-            with client.websocket_connect("/ws/battle") as c:
+            with authenticated(client) as c:
                 until(c, "hello")
                 c.send_json({"type": "join", "code": code})
                 assert until(c, "joined")["code"] == code
@@ -65,13 +78,15 @@ def test_origin_payload_validation_and_online_assets():
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/ws/battle", headers={"origin": "http://another-host"}):
                 pass
+        user = client.get("/api/me").json()
+        client.post("/api/guest", json={}, headers={"X-CSRF-Token":user["csrf"]})
         with client.websocket_connect("/ws/battle", headers={"origin": "http://testserver"}) as a:
             until(a, "hello")
             a.send_text('not json')
             with pytest.raises(WebSocketDisconnect):
                 while True:
                     a.receive_json()
-        with client.websocket_connect("/ws/battle") as a:
+        with authenticated(client) as a:
             until(a, "hello")
             a.send_text('x' * 4097)
             with pytest.raises(WebSocketDisconnect):

@@ -13,14 +13,13 @@ def test_health_check_returns_ok() -> None:
     assert response.json() == {"status": "ok"}
 
 
-def test_index_serves_both_game_modes() -> None:
+def test_index_serves_entry_screen() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert 'data-mode="sprint"' in response.text
-    assert 'data-mode="attack"' in response.text
-    assert 'id="result"' in response.text
-    assert 'id="history-table"' in response.text
+    assert 'id="entry-login"' in response.text
+    assert 'id="entry-register"' in response.text
+    assert 'id="guest-enter"' in response.text
 
 
 def test_game_assets_are_served() -> None:
@@ -41,5 +40,8 @@ def test_settings_page_and_shared_preferences() -> None:
         assert f'id="pref-{field}"' in response.text
     for path in ("js/preferences.js", "js/settings.js", "css/settings.css"):
         assert client.get(f"/static/{path}").status_code == 200
-    for path in ("/", "/battle"):
-        assert 'href="/settings"' in client.get(path).text
+    with TestClient(app) as connected:
+        user = connected.get('/api/me').json()
+        connected.post('/api/guest', json={}, headers={'X-CSRF-Token':user['csrf']})
+        for path in ('/play', '/battle'):
+            assert 'href="/settings"' in connected.get(path).text

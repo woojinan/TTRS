@@ -7,11 +7,11 @@
 </head>
 <body data-phase="ready">
 <main class="game-shell">
-  <header class="topbar"><a class="brand" href="/" aria-label="TTRS 홈"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>TTRS<span class="brand-note">precision block arcade</span></a><div class="topbar-actions"><button id="skins-button" class="icon-button skin-launch" type="button"><span aria-hidden="true">✦</span> 블록 스킨 <span id="current-skin-name">젤리</span></button><button id="settings-button" class="icon-button" type="button"><span aria-hidden="true">⚙</span> SETTINGS</button></div></header>
+  <header class="topbar"><a class="brand" href="/play" aria-label="TTRS 홈"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>TTRS<span class="brand-note">precision block arcade</span></a><div class="topbar-actions"><button id="skins-button" class="icon-button skin-launch" type="button"><span aria-hidden="true">✦</span> 블록 스킨 <span id="current-skin-name">젤리</span></button><button id="settings-button" class="icon-button" type="button"><span aria-hidden="true">⚙</span> SETTINGS</button></div></header>
   <div class="preferences-toolbar"><a class="preferences-link" href="/settings" target="_blank" rel="noopener" title="감도와 보드 설정을 새 탭에서 엽니다. 게임은 계속 진행됩니다." aria-label="플레이 설정: 감도와 보드 설정, 새 탭에서 열림. 게임은 계속 진행됩니다."><svg class="preferences-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 7h7m4 0h5M4 17h3m4 0h9"/><circle cx="13" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span>플레이 설정</span><svg class="preferences-external" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3H3v10h10v-3M9 3h4v4M7 9l6-6"/></svg></a></div>
   <header class="masthead"><div><p id="mode-eyebrow">SOLO SPRINT · 40 LINE CHALLENGE</p><h1 id="game-title">40 LINES</h1></div><p class="hero-note">정교한 조작, 선명한 기록.<br><span>오늘의 최고 기록에 도전하세요.</span></p></header>
   <nav class="mode-switch" aria-label="게임 모드"><button type="button" data-mode="sprint" aria-pressed="true"><span class="mode-icon" aria-hidden="true">⚑</span><span>40 LINES <small>40줄 기록 도전</small></span><span class="mode-dot" aria-hidden="true"></span></button><button type="button" data-mode="attack" aria-pressed="false"><span class="mode-icon" aria-hidden="true">◷</span><span>TIME ATTACK <small>2분 점수 도전</small></span><span class="mode-dot" aria-hidden="true"></span></button></nav>
-  <a class="online-entry" href="/battle"><span>↗ ONLINE DUEL</span> 친구와 1대1 대결 · 방 만들기 / 참가 <span aria-hidden="true">→</span></a>
+  <a class="online-entry" href="/battle"><span>↗ ARENA 50</span> 최대 50명 생존 대결 · 방 만들기 / 참가 <span aria-hidden="true">→</span></a>
   <section class="game-layout">
     <aside class="column left">
       <section class="panel hold-panel"><p class="panel-label">HOLD <kbd>C</kbd></p><canvas id="hold" width="120" height="120"></canvas></section>
@@ -24,7 +24,8 @@
     </section>
     <aside class="column right"><section class="panel next-panel"><p class="panel-label">NEXT <small>×5</small></p><div id="next-list"></div></section><section class="panel event-panel"><p class="panel-label">HIGHLIGHTS <span aria-hidden="true">✦</span></p><strong id="event-text">—</strong><p id="combo-text">COMBO —</p><p id="b2b-text">B2B —</p></section><button id="restart-button" class="restart" type="button">↻ RESTART <kbd>R</kbd></button></aside>
   </section>
-  <section class="mobile-controls" aria-label="모바일 조작"><button data-control="hold">HOLD</button><button data-control="left">←</button><button data-control="rotate-left">↺</button><button data-control="rotate-right">↻</button><button data-control="right">→</button><button data-control="down">↓</button><button data-control="drop">DROP</button></section>
+  <p class="keyboard-note">키보드 전용 · ← → 이동 · ↓ 내리기 · ↑ / X / Z 회전 · A 180° · C 홀드 · Space 낙하</p>
+  <p id="server-record-status" class="status" role="status"></p>
   <p id="status" class="status" role="status">40줄 완주 · 일정한 낙하 속도 · 최고 기록에 도전하세요</p>
   <section id="result" class="result-panel" hidden aria-labelledby="result-title">
     <div class="result-heading"><div><p class="section-kicker" id="result-mode">40 LINES</p><h2 id="result-title">COMPLETE</h2></div><strong id="result-primary"></strong></div>
@@ -45,5 +46,5 @@
   <label class="check"><input id="effects-input" type="checkbox"> 착지·줄 삭제 효과</label>
   <p class="rule-note">낙하 속도: 1초에 1칸 · 잠금 지연: 500 ms / 최대 15회 리셋<br>설정 중에도 게임과 타이머는 계속 진행됩니다.</p><button id="save-settings" value="close">SAVE SETTINGS</button>
 </form></dialog>
-<script src="/static/js/engine.js" defer></script><script src="/static/js/audio.js" defer></script><script src="/static/js/skins.js" defer></script><script src="/static/js/preferences.js" defer></script><script src="/static/js/app.js" defer></script>
+<script src="/static/js/engine.js" defer></script><script src="/static/js/audio.js" defer></script><script src="/static/js/skins.js" defer></script><script src="/static/js/preferences.js" defer></script><script src="/static/js/account-client.js" defer></script><script src="/static/js/layout.js" defer></script><script src="/static/js/app.js" defer></script>
 </body></html>

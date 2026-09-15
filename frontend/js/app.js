@@ -19,6 +19,19 @@ $("#hold").width=240;$("#hold").height=240;$("#hold").style.width="120px";$("#ho
 const reducedMotion=window.matchMedia("(prefers-reduced-motion: reduce)");
 let game=new Game(),mode="sprint",phase="ready",startedAt=0,countdownAt=0,countdownNumber=0,elapsed=0;
 let keys={},direction=0,repeatAt=0,softAt=0,effects=[],feedbackUntil=0,frame=null;
+let runTicket=null,trace=[],starting=false,traceOverflow=false;
+function trackGame() {
+  let depth=0;
+  for(const [method,index] of Object.entries({move:1,rotate:1,down:0,holdPiece:0,hardDrop:0,update:0})) {
+    const original=game[method];game[method]=function(...args){
+      if(!depth&&phase==='playing') {
+        const values=args.filter((_,i)=>i!==index);if(method==='down')values[0]=Boolean(values[0]);
+        if(trace.length<60000)trace.push([method,args[index]-startedAt,values]);else traceOverflow=true;
+      }
+      depth++;try{return original.apply(this,args);}finally{depth--;}
+    };
+  }
+}
 function fmt(ms) {const n=Math.max(0,Math.floor(ms/10));return `${String(Math.floor(n/6000)).padStart(2,"0")}:${String(Math.floor(n/100)%60).padStart(2,"0")}.${String(n%100).padStart(2,"0")}`;}
 function storageNotice() {$("#storage-note").textContent=storageOK?"기록과 설정은 이 브라우저에 저장됩니다.":"브라우저 저장소를 사용할 수 없어 이번 접속 중에만 기록과 설정을 유지합니다.";}
 function resetInput() {keys={};direction=0;repeatAt=0;softAt=0;}
@@ -63,9 +76,14 @@ function action(name,now=performance.now()) {
   if(name==="drop") {afterLock(game.hardDrop(now),now,true);changed=true;}
   updateHud();draw(now);armFrame();return changed;
 }
-function start() {
+async function start() {
+  if(starting)return;starting=true;setModeButtons(true);
   sound.unlock();sound.configure(prefs);sound.stopMusic();
-  game=new Game();phase="countdown";elapsed=0;countdownAt=performance.now();countdownNumber=3;
+  phase='loading';resetInput();$('#server-record-status').textContent='서버 기록 준비 중…';
+  try {runTicket=await TTRSAccount.api('/runs/start',{mode});$('#server-record-status').textContent='입력 기록을 검증해 서버에 저장합니다.';}
+  catch(e){runTicket=null;$('#server-record-status').textContent='서버 연결 실패 · 이번 판은 로컬 기록만 저장합니다.';}
+  starting=false;trace=[];traceOverflow=false;
+  game=new Game(runTicket?Tetris.seededRandom(runTicket.seed):Math.random);trackGame();phase="countdown";elapsed=0;countdownAt=performance.now();countdownNumber=3;
   effects=[];feedbackUntil=0;resetInput();
   $("#board-feedback").classList.remove("visible");$("#result").hidden=true;
   $("#event-text").textContent="—";$("#combo-text").textContent="COMBO —";$("#b2b-text").textContent="B2B —";
@@ -92,6 +110,9 @@ function finish(completed,now=performance.now()) {
   if(isBest) {bests[mode]=candidate;write(mode==="sprint"?BEST:ATTACK_BEST,candidate);}
   const record={mode,completed,date:new Date().toISOString(),elapsed,score:game.score,lines:game.lines,pieces:game.pieces,pps:elapsed>0?game.pieces/(elapsed/1000):0,maxCombo:game.maxCombo,tspins:game.tspins,tetrises:game.tetrises,perfects:game.perfects};
   records.unshift(record);const counts={sprint:0,attack:0};records=records.filter(r=>++counts[r.mode]<=10);write(HISTORY,records);
+  const ticket=runTicket,status=$('#server-record-status');
+  if(ticket&&!traceOverflow){status.textContent='입력 검증 및 서버 저장 중…';TTRSAccount.api('/runs/finish',{id:ticket.id,elapsed,actions:trace}).then(()=>{if(runTicket===ticket)status.textContent='서버 저장 완료 · 내 기록에서 확인하세요.';}).catch(e=>{if(runTicket===ticket)status.textContent=e.message+' · 로컬 기록은 유지됩니다.';});}
+  else status.textContent='이번 판은 로컬에만 저장되었습니다. 서버 기록은 연결 상태와 입력 검증이 필요합니다.';
   $("#overlay").hidden=false;$("#overlay-title").textContent=completed?mode==="attack"?"TIME UP":"COMPLETE":"GAME OVER";
   $("#overlay-description").textContent=mode==="sprint"?`${fmt(elapsed)} · ${game.lines} LINES`:`${game.score.toLocaleString()} PTS · ${game.lines} LINES`;
   $("#start-button").hidden=false;$("#start-button").textContent="RETRY";
@@ -199,6 +220,9 @@ function processHeld(now) {
   if(keys.ArrowDown&&now>=softAt) {let count=0;while(now>=softAt&&count++<22) {game.down(now,true);softAt+=35;}if(now>=softAt)softAt=now+35;}
 }
 function tick(now) {
+  // rAF's scheduled timestamp can precede a keyboard event processed in this frame.
+  // Use the actual callback time to keep both physics and replay timestamps ordered.
+  now=performance.now();
   frame=null;
   if(phase==="countdown") {
     const count=Math.ceil((COUNTDOWN_MS-(now-countdownAt))/1000);
@@ -213,9 +237,8 @@ function tick(now) {
 $("#start-button").onclick=start;$("#restart-button").onclick=start;
 $("#result-retry").onclick=()=>{start();$(".board-column").scrollIntoView({block:"center",behavior:"instant"});};
 document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>selectMode(b.dataset.mode));
-document.querySelectorAll("[data-control]").forEach(b=>b.onclick=()=>action(b.dataset.control));
 document.addEventListener("keydown",e=>{
-  if(dialog.open||skinsDialog.open||e.ctrlKey||e.metaKey||e.altKey)return;
+  if(document.body.classList.contains('resizing')||dialog.open||skinsDialog.open||e.ctrlKey||e.metaKey||e.altKey||e.target.matches('input,textarea,select'))return;
   const k=e.code==="Space"?"Space":e.key;
   if(["ArrowLeft","ArrowRight","ArrowDown","ArrowUp","Space"].includes(k)&&phase!=="ready")e.preventDefault();
   if(e.repeat)return;if(k.toLowerCase()==="r") {start();return;}
@@ -235,7 +258,7 @@ document.addEventListener("keyup",e=>{
     if(released===direction) {direction=keys.ArrowLeft?-1:keys.ArrowRight?1:0;repeatAt=performance.now()+prefs.das;}
   }
 });
-window.addEventListener("blur",resetInput);document.addEventListener("visibilitychange",()=>{if(document.hidden)resetInput();});
+window.addEventListener("blur",resetInput);window.addEventListener("ttrs-resize-start",resetInput);document.addEventListener("visibilitychange",()=>{if(document.hidden)resetInput();});
 function syncSettings() {
   ["das","arr","sfx","music"].forEach(key=>{$(`#${key}-input`).value=prefs[key];$(`#${key}-value`).textContent=key==="arr"&&prefs.arr===0?"INSTANT":`${prefs[key]}${["das","arr"].includes(key)?" ms":"%"}`;});
   $("#ghost-input").checked=prefs.ghost;$("#mute-input").checked=prefs.muted;$("#effects-input").checked=prefs.effects;sound.configure(prefs);

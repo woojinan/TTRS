@@ -7,7 +7,7 @@ const {setTimeout:delay}=require('node:timers/promises');
 const artifacts=path.resolve('.test-artifacts');fs.mkdirSync(artifacts,{recursive:true});
 const profile=fs.mkdtempSync(path.join(artifacts,'chrome-'));
 const chrome=process.env.TTRS_CHROME||'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const url=process.env.TTRS_URL||'http://127.0.0.1:8000';
+const base=process.env.TTRS_URL||'http://127.0.0.1:1559',url=base.replace(/\/$/,'')+'/play';
 const quick=process.argv.includes('--quick');
 const proc=spawn(chrome,['--headless=new','--remote-debugging-port=0',`--user-data-dir=${profile}`,'--no-first-run','--no-default-browser-check','--disable-background-timer-throttling','--disable-renderer-backgrounding','--window-size=1440,1100','about:blank'],{windowsHide:true,stdio:['ignore','ignore','pipe']});
 let socket,seq=0,passed=0;const pending=new Map(),errors=[],networkErrors=[];
@@ -16,12 +16,14 @@ function send(method,params={}) {return new Promise((resolve,reject)=>{const id=
 async function evaluate(expression) {const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true,userGesture:true});if(r.exceptionDetails)throw new Error(r.exceptionDetails.exception?.description||r.exceptionDetails.text);return r.result.value;}
 async function until(expression,timeout=6000) {const end=Date.now()+timeout;while(Date.now()<end){if(await evaluate(expression))return;await delay(40);}throw new Error(`Timed out: ${expression}`);}
 async function check(name,work) {await work();passed++;console.log(`PASS ${passed}: ${name}`);}
-async function click(selector) {const box=await evaluate(`(()=>{const element=document.querySelector(${JSON.stringify(selector)});element.scrollIntoView({block:'nearest',inline:'nearest'});const r=element.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);await send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...box});await send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...box});await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');}
+async function click(selector) {const box=await evaluate(`(()=>{const element=document.querySelector(${JSON.stringify(selector)});element.scrollIntoView({block:'nearest',inline:'nearest'});const r=element.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);await send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...box});await send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...box});await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))').catch(e=>{if(!/navigated|context.*destroyed|Cannot find context/i.test(e.message))throw e;});}
 async function key(key,code=key) {await send('Input.dispatchKeyEvent',{type:'keyDown',key,code});await send('Input.dispatchKeyEvent',{type:'keyUp',key,code});}
 async function screenshot(name,full=false) {if(full){const m=await send('Page.getLayoutMetrics');const {width,height}=m.cssContentSize;const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true,clip:{x:0,y:0,width,height,scale:1}});fs.writeFileSync(path.join(artifacts,name),Buffer.from(shot.data,'base64'));}else{const shot=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(artifacts,name),Buffer.from(shot.data,'base64'));}}
 async function well(){await evaluate(`(()=>{game.board=Array.from({length:22},()=>Array(10).fill(null));for(let y=18;y<22;y++)game.board[y]=Array.from({length:10},(_,x)=>x===5?null:'#647580');game.current=clone('I');game.rotate(1,performance.now());game.current.x=3;game.current.y=10;game.resetPiece(performance.now());draw(performance.now());})()`);}
-async function reload(){const previous=await evaluate('performance.timeOrigin');await send('Page.reload',{ignoreCache:true});await until(`performance.timeOrigin!==${previous}&&typeof phase!=='undefined'&&phase==='ready'&&document.readyState==='complete'`);}
-async function startFast(){await evaluate(`start();countdownAt=performance.now()-3001;`);await until(`phase==='playing'`);}
+// Synthetic board fixtures below test local UI only; arena-browser.cjs validates real server records.
+async function localOnly(){await evaluate(`window.qaStart=start;start=async()=>{await qaStart();runTicket=null;};document.querySelector('#start-button').onclick=start;document.querySelector('#restart-button').onclick=start;`);}
+async function reload(){const previous=await evaluate('performance.timeOrigin');await send('Page.reload',{ignoreCache:true});await until(`performance.timeOrigin!==${previous}&&typeof phase!=='undefined'&&phase==='ready'&&document.readyState==='complete'`);await localOnly();}
+async function startFast(){await evaluate(`(async()=>{await start();countdownAt=performance.now()-3001;})()`);await until(`phase==='playing'`);}
 (async()=>{
   try {
     const activeFile=path.join(profile,'DevToolsActivePort');const deadline=Date.now()+15000;
@@ -33,7 +35,7 @@ async function startFast(){await evaluate(`start();countdownAt=performance.now()
     socket.onmessage=e=>{const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id);if(p){clearTimeout(p.timeout);pending.delete(m.id);m.error?p.reject(new Error(m.error.message)):p.resolve(m.result);}}else if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails.exception?.description||m.params.exceptionDetails.text);else if(m.method==='Network.responseReceived'&&m.params.response.status>=400)networkErrors.push(m.params.response.url);};
     await send('Runtime.enable');await send('Page.enable');await send('Network.enable');
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
-    await send('Page.navigate',{url});await until(`document.readyState==='complete'&&typeof phase!=='undefined'`);
+    await send('Page.navigate',{url});await until(`document.readyState==='complete'`);if(await evaluate(`Boolean(document.querySelector('#guest-enter'))`)){await until(`!document.querySelector('#guest-enter').disabled`);await click('#guest-enter');}await until(`document.readyState==='complete'&&typeof phase!=='undefined'`);await localOnly();
     await check('initial page, scripts, mode controls and board layout',async()=>{
       assert.equal(await evaluate('phase'),'ready');assert.equal(await evaluate(`document.querySelectorAll('#next-list canvas').length`),5);
       assert.equal(await evaluate(`document.querySelector('#result').hidden`),true);
@@ -65,7 +67,7 @@ async function startFast(){await evaluate(`start();countdownAt=performance.now()
       await key('Escape');await until('!skinsDialog.open');await reload();
     });
     await check('real 3-second countdown blocks input and excludes preparation time',async()=>{
-      const wall=Date.now();await click('#start-button');assert.equal(await evaluate('phase'),'countdown');
+      const wall=Date.now();await click('#start-button');await until("phase==='countdown'");assert.equal(await evaluate('phase'),'countdown');
       await key(' ','Space');assert.equal(await evaluate('game.pieces'),0);assert.equal(await evaluate('elapsed'),0);
       await until(`phase==='playing'`,5000);assert.ok(Date.now()-wall>=2900);assert.ok(await evaluate('elapsed<250'));
       await key('ArrowLeft');await key('x','KeyX');await key('c','KeyC');assert.equal(await evaluate('game.canHold'),false);
@@ -104,7 +106,7 @@ async function startFast(){await evaluate(`start();countdownAt=performance.now()
       assert.equal(await evaluate('phase'),'finished');assert.equal(await evaluate('records[0].completed'),false);assert.equal(await evaluate('bests.sprint'),best);
     });
     await check('restart clears held keys, effects, counters and runs one frame loop',async()=>{
-      await startFast();await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowRight',code:'ArrowRight'});await key('r','KeyR');
+      await startFast();await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowRight',code:'ArrowRight'});await key('r','KeyR');await until("phase==='countdown'");
       assert.equal(await evaluate('phase'),'countdown');assert.equal(await evaluate('direction'),0);assert.equal(await evaluate('game.pieces'),0);assert.equal(await evaluate('effects.length'),0);
       await send('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowRight',code:'ArrowRight'});await evaluate(`countdownAt=performance.now()-3001;`);await until(`phase==='playing'`);
       await evaluate(`finish(false);`);
@@ -145,7 +147,7 @@ async function startFast(){await evaluate(`start();countdownAt=performance.now()
       assert.equal(await evaluate('phase'),'finished');assert.equal(await evaluate('game.pieces'),0);assert.equal(await evaluate('elapsed'),120000);
     });
     await check('history retains ten runs per mode and comparisons show improvement',async()=>{
-      const expected=await evaluate(`(()=>{const baseline=bests.attack+100;for(let i=0;i<12;i++){start();begin(performance.now());game.score=baseline+i;finish(true,startedAt+ATTACK_MS);}return baseline+11;})()`);
+      const expected=await evaluate(`(async()=>{const baseline=bests.attack+100;for(let i=0;i<12;i++){await start();begin(performance.now());game.score=baseline+i;finish(true,startedAt+ATTACK_MS);}return baseline+11;})()`);
       assert.equal(await evaluate('records.filter(r=>r.mode==="attack").length'),10);assert.equal(await evaluate(`document.querySelectorAll('#history-body tr').length`),10);
       assert.equal(await evaluate('bests.attack'),expected);assert.ok(await evaluate(`document.querySelector('#result-comparison').textContent.includes('1점 높습니다')`));
       await reload();assert.equal(await evaluate('records.filter(r=>r.mode==="attack").length'),10);assert.ok(await evaluate('records.some(r=>r.mode==="sprint")'));
@@ -170,7 +172,7 @@ async function startFast(){await evaluate(`start();countdownAt=performance.now()
       assert.equal(await evaluate('phase'),'finished');assert.equal(await evaluate('storageOK'),false);assert.ok(await evaluate(`document.querySelector('#storage-note').textContent.includes('이번 접속 중')`));
     });
     await check('zero-point ties are not reported as a new best',async()=>{
-      await evaluate(`selectMode('attack');bests.attack=0;records=[];start();begin(performance.now());finish(true,startedAt+ATTACK_MS);start();begin(performance.now());finish(true,startedAt+ATTACK_MS);`);
+      await evaluate(`(async()=>{selectMode('attack');bests.attack=0;records=[];await start();begin(performance.now());finish(true,startedAt+ATTACK_MS);await start();begin(performance.now());finish(true,startedAt+ATTACK_MS);})()`);
       assert.equal(await evaluate(`document.querySelector('#result-title').textContent`),'CHALLENGE COMPLETE');
       assert.ok(await evaluate(`document.querySelector('#result-comparison').textContent.includes('동률')`));
     });
