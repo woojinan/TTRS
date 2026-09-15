@@ -6,10 +6,8 @@ const ATTACK_MS=120000,COUNTDOWN_MS=3000;
 let storageOK=true;
 function read(key,fallback) { try { const raw=localStorage.getItem(key); return raw===null?fallback:JSON.parse(raw); } catch(_) {storageOK=false;return fallback;} }
 function write(key,value) { try {localStorage.setItem(key,JSON.stringify(value));} catch(_) {storageOK=false;storageNotice();} }
-const clamp=(v,min,max,fallback)=>Number.isFinite(Number(v))?Math.min(max,Math.max(min,Number(v))):fallback;
 const savedPrefs=read(SETTINGS,{})||{};
-let prefs={das:clamp(savedPrefs.das,0,300,133),arr:clamp(savedPrefs.arr,0,100,10),ghost:savedPrefs.ghost!==false,sfx:clamp(savedPrefs.sfx,0,100,65),music:clamp(savedPrefs.music,0,100,20),muted:savedPrefs.muted===true,effects:savedPrefs.effects!==false};
-prefs.skin=BlockSkins.get(savedPrefs.skin).id;
+let prefs=TTRSPreferences.normalize(savedPrefs);
 let records=read(HISTORY,[]);
 records=Array.isArray(records)?records.filter(r=>r&&["sprint","attack"].includes(r.mode)&&[r.elapsed,r.score,r.lines,r.pps].every(n=>Number.isFinite(n)&&n>=0)&&typeof r.date==="string"&&Number.isFinite(Date.parse(r.date))&&typeof r.completed==="boolean").slice(0,20):[];
 const savedSprintBest=Number(read(BEST,0)),savedAttackBest=Number(read(ATTACK_BEST,0));
@@ -161,21 +159,21 @@ function drawPreviews() {
   $("#next-list").replaceChildren(...game.queue.slice(0,5).map(type=>{const c=document.createElement("canvas");c.width=316;c.height=104;c.className="next-item";const context=c.getContext("2d");context.scale(2,2);drawMini(context,type,158,52);return c;}));
 }
 function paintBlock(context,x,y,size,color,ghost=false) {
-  const key=`${prefs.skin}:${color}:${size}:${ghost}`;
+  const key=`${prefs.skin}:${color}:${size}:${ghost}:${ghost?prefs.ghostOpacity:0}`;
   if(!skinTiles.has(key)) {
     const tile=document.createElement("canvas");tile.width=size*2;tile.height=size*2;
-    const tileCtx=tile.getContext("2d");tileCtx.scale(2,2);BlockSkins.draw(tileCtx,0,0,size,color,prefs.skin,ghost);skinTiles.set(key,tile);
+    const tileCtx=tile.getContext("2d");tileCtx.scale(2,2);BlockSkins.draw(tileCtx,0,0,size,color,prefs.skin,ghost,prefs.ghostOpacity);skinTiles.set(key,tile);
   }
   context.drawImage(skinTiles.get(key),x,y,size,size);
 }
 function block(x,y,color) {
   if(y<2)return;const px=x*30,py=(y-2)*30;
   if(color)paintBlock(ctx,px,py,30,color);
-  else {ctx.fillStyle="#0d1526";ctx.beginPath();ctx.roundRect(px+1,py+1,28,28,3);ctx.fill();}
+  else {ctx.fillStyle=TTRSPreferences.background(prefs);ctx.beginPath();ctx.roundRect(px+1,py+1,28,28,3);ctx.fill();}
 }
 function draw(now) {
   // The 2px gaps between empty cells reveal this lighter fill as the board grid.
-  ctx.clearRect(0,0,300,600);ctx.fillStyle="#33486b";ctx.fillRect(0,0,300,600);
+  ctx.clearRect(0,0,300,600);ctx.fillStyle=TTRSPreferences.gridColor(prefs);ctx.fillRect(0,0,300,600);
   game.board.forEach((row,y)=>row.forEach((v,x)=>block(x,y,v)));
   if(phase!=="finished"&&!game.over) {
     if(prefs.ghost) {const ghost={...game.current};while(!game.blocked(ghost,0,1))ghost.y++;cells(ghost).forEach(({x,y})=>{if(y>=2)paintBlock(ctx,x*30,(y-2)*30,30,game.current.c,true);});}
@@ -274,4 +272,10 @@ $("#skins-button").onclick=()=>{resetInput();$(".skin-playing-note").hidden=!["p
 $("#close-skins").onclick=()=>skinsDialog.close();$("#done-skins").onclick=()=>skinsDialog.close();
 skinsDialog.addEventListener("close",resetInput);
 buildSkinOptions();
+window.addEventListener('storage',e=>{
+  if(e.key!==SETTINGS&&e.key!==null)return;
+  prefs=TTRSPreferences.load();skinTiles.clear();resetInput();syncSettings();syncSkinSelection();
+  if(!prefs.effects){effects=[];feedbackUntil=0;}
+  drawPreviews();draw(performance.now());
+});
 syncSettings();selectMode(new URLSearchParams(location.search).get("mode")==="attack"?"attack":"sprint");

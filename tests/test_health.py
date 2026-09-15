@@ -32,3 +32,14 @@ def test_game_assets_are_served() -> None:
 
 def test_missing_assets_return_404() -> None:
     assert client.get("/static/js/missing.js").status_code == 404
+
+
+def test_settings_page_and_shared_preferences() -> None:
+    response = client.get("/settings")
+    assert response.status_code == 200
+    for field in ("das", "arr", "ghostOpacity", "gridOpacity", "boardTheme", "skin"):
+        assert f'id="pref-{field}"' in response.text
+    for path in ("js/preferences.js", "js/settings.js", "css/settings.css"):
+        assert client.get(f"/static/{path}").status_code == 200
+    for path in ("/", "/battle"):
+        assert 'href="/settings"' in client.get(path).text

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#e6edf6"><title>감도 · 보드 설정 · TTRS</title>
+  <link rel="icon" href="data:,"><link rel="stylesheet" href="/static/css/style.css"><link rel="stylesheet" href="/static/css/settings.css">
+</head>
+<body class="settings-page">
+<main class="settings-shell">
+  <header class="topbar"><a class="brand" href="/">TTRS <span class="brand-note">make it yours</span></a><nav aria-label="게임 화면"><a href="/">솔로 게임</a><a href="/battle">온라인 대결</a></nav></header>
+  <header class="settings-heading"><p class="section-kicker">YOUR PLAY, YOUR FEEL</p><h1>감도 · 보드 설정</h1><p>손에 맞는 움직임, 눈에 편한 보드.<br>이 브라우저의 40라인 · 타임어택 · 온라인 대결에 함께 적용됩니다.</p></header>
+  <div class="settings-layout">
+    <form id="preferences-form">
+      <section class="panel settings-card" aria-labelledby="handling-title"><p class="section-kicker">01 / HANDLING</p><h2 id="handling-title">조작 감도</h2>
+        <label for="pref-das">연속 이동 대기 <span>DAS <output id="value-das" for="pref-das">133 ms</output></span></label><input id="pref-das" name="das" type="range" min="0" max="300" step="1"><p class="setting-help">방향키를 누른 뒤 연속 이동이 시작되는 시간. 낮을수록 빨리 반응해요.</p>
+        <label for="pref-arr">연속 이동 간격 <span>ARR <output id="value-arr" for="pref-arr">10 ms</output></span></label><input id="pref-arr" name="arr" type="range" min="0" max="100" step="1"><p class="setting-help">연속 이동 중 한 칸씩 움직이는 간격. 0이면 대기 시간 후 벽까지 즉시 이동합니다.</p>
+        <p class="settings-note">자동 낙하 속도는 1초에 1칸으로 고정됩니다. 감도는 좌우 입력에만 적용됩니다.</p>
+      </section>
+      <section class="panel settings-card" aria-labelledby="board-title"><p class="section-kicker">02 / PLAYFIELD</p><h2 id="board-title">보드와 착지 가이드</h2>
+        <label class="setting-check" for="pref-ghost"><span>고스트 블록 표시 <small>블록이 착지할 위치를 미리 보여줘요</small></span><input id="pref-ghost" name="ghost" type="checkbox"></label>
+        <label for="pref-ghostOpacity">고스트 선명도 <output id="value-ghostOpacity" for="pref-ghostOpacity">55%</output></label><input id="pref-ghostOpacity" name="ghostOpacity" type="range" min="10" max="85" step="1"><p class="setting-help">기본 55%. 실제 블록과 구분되도록 반투명 채움과 윤곽선으로 표시합니다.</p>
+        <label class="setting-check" for="pref-grid"><span>보드 격자 표시</span><input id="pref-grid" name="grid" type="checkbox"></label>
+        <label for="pref-gridOpacity">격자 선명도 <output id="value-gridOpacity" for="pref-gridOpacity">50%</output></label><input id="pref-gridOpacity" name="gridOpacity" type="range" min="0" max="100" step="1">
+        <label for="pref-boardTheme">보드 배경</label><select id="pref-boardTheme" name="boardTheme"><option value="midnight">미드나이트 · 짙은 네이비</option><option value="slate">슬레이트 · 부드러운 블루 그레이</option><option value="ocean">오션 · 깊은 청록빛</option></select>
+        <label for="pref-skin">블록 스킨</label><select id="pref-skin" name="skin"></select>
+        <label class="setting-check" for="pref-effects"><span>착지 · 줄 삭제 효과</span><input id="pref-effects" name="effects" type="checkbox"></label>
+      </section>
+      <section class="panel settings-card" aria-labelledby="sound-title"><p class="section-kicker">03 / SOUND</p><h2 id="sound-title">사운드</h2>
+        <label for="pref-sfx">효과음 <output id="value-sfx" for="pref-sfx">65%</output></label><input id="pref-sfx" name="sfx" type="range" min="0" max="100" step="1">
+        <label for="pref-music">배경음 <output id="value-music" for="pref-music">20%</output></label><input id="pref-music" name="music" type="range" min="0" max="100" step="1">
+        <label class="setting-check" for="pref-muted"><span>모든 소리 끄기</span><input id="pref-muted" name="muted" type="checkbox"></label>
+      </section>
+      <div class="settings-save"><p id="save-status" role="status">변경 후 저장하면 열려 있는 게임에도 적용됩니다.</p><div><button id="reset-preferences" type="button">기본값 복원</button><button id="save-preferences" class="primary-button" type="submit">설정 저장</button></div></div>
+    </form>
+    <aside class="settings-preview"><section class="panel"><p class="panel-label">LIVE PREVIEW <span>미리보기</span></p><canvas id="settings-board" width="400" height="800" aria-label="고스트 블록과 보드 격자 미리보기"></canvas><p>위는 현재 블록, 아래 반투명 블록은 착지 위치입니다.</p></section><div class="settings-preview-note"><strong>플레이 흐름은 그대로</strong><p>설정은 이 주소의 브라우저에 저장됩니다. 새 탭에서 저장하면 기존 게임에 바로 적용됩니다. 대결은 일시정지되지 않으니 대기 중에 조정해 주세요.</p><p>A: 전용 180° 회전<br>↑ / X: 시계 방향 · Z: 반시계 방향</p></div></aside>
+  </div>
+  <footer class="page-footer">FIND YOUR OWN RHYTHM <span>✦</span> TTRS</footer>
+</main>
+<script src="/static/js/engine.js" defer></script><script src="/static/js/skins.js" defer></script><script src="/static/js/preferences.js" defer></script><script src="/static/js/settings.js" defer></script>
+</body>
+</html>

@@ -21,11 +21,13 @@
     if(fill){ctx.fillStyle=fill;ctx.fill();}
     if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=.9;ctx.stroke();}
   }
-  function draw(ctx,x,y,size,value,id="jelly",ghost=false) {
+  function draw(ctx,x,y,size,value,id="jelly",ghost=false,ghostOpacity=55) {
     const ink=color(id,value),skin=get(id).id,pad=size*.055,w=size-pad*2;
     ctx.save();ctx.translate(x+pad,y+pad);
     if(ghost) {
-      ctx.globalAlpha*=.85;rounded(ctx,1,1,w-2,w-2,size*.19,ink+"24",ink+"c8");
+      const opacity=Number.isFinite(ghostOpacity)?Math.max(10,Math.min(85,ghostOpacity)):55;
+      const alpha=Math.round(opacity/100*255).toString(16).padStart(2,'0');
+      rounded(ctx,1,1,w-2,w-2,size*.19,ink+alpha,ink+"ef");
       ctx.restore();return;
     }
     if(skin==="jelly") {

@@ -1,0 +1,6 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const P=require('../frontend/js/preferences');
+test('existing preferences migrate to stronger ghost and unchanged grid defaults',()=>{const p=P.normalize({das:77,arr:0,skin:'neon',ghost:false});assert.equal(p.das,77);assert.equal(p.arr,0);assert.equal(p.ghost,false);assert.equal(p.ghostOpacity,55);assert.equal(p.skin,'neon');assert.equal(P.gridColor(P.defaults),'#33486b');});
+test('malformed preferences cannot produce invalid colors or nonfinite handling',()=>{for(const raw of [null,42,'bad',[],{das:Infinity,ghostOpacity:NaN,grid:'false',boardTheme:'__proto__',skin:'unknown'}])assert.deepEqual(P.normalize(raw),P.defaults);const p=P.normalize({das:-10,arr:999,ghostOpacity:100,gridOpacity:-1});assert.equal(p.das,0);assert.equal(p.arr,100);assert.equal(p.ghostOpacity,85);assert.equal(p.gridOpacity,0);});
+test('grid off uses the exact background in every theme',()=>{for(const boardTheme of ['midnight','slate','ocean']){const p=P.normalize({boardTheme,grid:false});assert.equal(P.background(p),P.gridColor(p));assert.match(P.background(p),/^#[0-9a-f]{6}$/);}});
+test('unavailable local storage falls back and reports save failure',()=>{assert.deepEqual(P.load(),P.defaults);assert.equal(P.save(P.defaults),false);});

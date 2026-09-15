@@ -10,6 +10,15 @@
     for(let i=result.length-1;i>0;i--) { const j=Math.floor(random()*(i+1)); [result[i],result[j]]=[result[j],result[i]]; }
     return result;
   }
+  // Dedicated half-turn kicks, following osk's published TETR.IO 180 diagram.
+  // https://tetris.wiki/images/5/52/TETR.IO_180kicks.png (positive Y is DOWN here).
+  // Quarter turns retain their existing SRS tables; this is not full SRS+.
+  const HALF={
+    "0>2":[[0,0],[0,-1],[1,-1],[-1,-1],[1,0],[-1,0]],
+    "2>0":[[0,0],[0,1],[-1,1],[1,1],[-1,0],[1,0]],
+    "1>3":[[0,0],[1,0],[1,-2],[1,-1],[0,-2],[0,-1]],
+    "3>1":[[0,0],[-1,0],[-1,-2],[-1,-1],[0,-2],[0,-1]]
+  };
   function clone(type) { const p=PIECES[type]; return {type,c:p.c,m:p.m.map(r=>[...r]),x:Math.floor((W-p.m[0].length)/2),y:0,r:0}; }
   function cells(piece) { const result=[]; piece.m.forEach((row,y)=>row.forEach((v,x)=>{if(v)result.push({x:piece.x+x,y:piece.y+y});})); return result; }
   function scoreClear(n,spin,perfect,combo,b2b) {
@@ -32,7 +41,7 @@
       return matrix.some((row,y)=>row.some((v,x)=>v&&(piece.x+x+dx<0||piece.x+x+dx>=W||piece.y+y+dy>=H||(piece.y+y+dy>=0&&this.board[piece.y+y+dy][piece.x+x+dx]))));
     }
     grounded() { return this.blocked(this.current,0,1); }
-    resetPiece(now) { this.lastRotate=false; this.lastKick=0; this.groundedAt=null; this.lockResets=0; this.gravityAt=now; this.over=this.blocked(); }
+    resetPiece(now) { this.lastRotate=false; this.lastKick=0; this.lastTurn=0; this.groundedAt=null; this.lockResets=0; this.gravityAt=now; this.over=this.blocked(); }
     spawn(now) { this.refill(); this.current=clone(this.queue.shift()); this.refill(); this.canHold=true; this.resetPiece(now); }
     resetLock(now,wasGrounded) {
       if(wasGrounded&&this.lockResets<15) { this.lockResets++; this.groundedAt=now; }
@@ -43,20 +52,14 @@
       const wasGrounded=this.grounded(); this.current.x+=dx; this.lastRotate=false; this.resetLock(now,wasGrounded); return true;
     }
     rotate(dir,now) {
-      if(this.over||this.current.type==="O")return false;
-      if(dir===2) {
-        // Existing two-quarter-turn convention, with rollback if either turn fails.
-        const snapshot={current:{...this.current},lastRotate:this.lastRotate,lastKick:this.lastKick,groundedAt:this.groundedAt,lockResets:this.lockResets};
-        if(this.rotate(1,now)&&this.rotate(1,now))return true;
-        Object.assign(this,snapshot); return false;
-      }
-      const p=this.current,m=dir===-1?p.m[0].map((_,i)=>p.m.map(row=>row[row.length-1-i])):p.m[0].map((_,i)=>p.m.map(row=>row[i]).reverse());
-      const target=(p.r+(dir===-1?3:1))%4,tests=(p.type==="I"?IK:JL)[`${p.r}>${target}`];
+      if(this.over||this.current.type==="O"||![-1,1,2].includes(dir))return false;
+      const p=this.current,m=dir===2?p.m.map(row=>[...row].reverse()).reverse():dir===-1?p.m[0].map((_,i)=>p.m.map(row=>row[row.length-1-i])):p.m[0].map((_,i)=>p.m.map(row=>row[i]).reverse());
+      const target=(p.r+(dir===-1?3:dir))%4,tests=(dir===2?HALF:p.type==="I"?IK:JL)[`${p.r}>${target}`];
       for(let i=0;i<tests.length;i++) {
         const [dx,dy]=tests[i];
         if(!this.blocked(p,dx,dy,m)) {
           const wasGrounded=this.grounded(); Object.assign(p,{x:p.x+dx,y:p.y+dy,m,r:target});
-          this.lastRotate=true; this.lastKick=i; this.resetLock(now,wasGrounded); return true;
+          this.lastRotate=true; this.lastKick=i; this.lastTurn=dir; this.resetLock(now,wasGrounded); return true;
         }
       }
       return false;
@@ -81,7 +84,8 @@
       const corners=[[px-1,py-1],[px+1,py-1],[px-1,py+1],[px+1,py+1]];
       if(corners.filter(occupied).length<3)return "";
       const front=[[0,1],[1,3],[2,3],[0,2]][this.current.r];
-      return front.every(i=>occupied(corners[i]))||this.lastKick===4?"T-SPIN":"T-SPIN MINI";
+      // The SRS fifth-test upgrade only belongs to a quarter turn, not a 180 kick.
+      return front.every(i=>occupied(corners[i]))||(Math.abs(this.lastTurn)===1&&this.lastKick===4)?"T-SPIN":"T-SPIN MINI";
     }
     hardDrop(now) {
       if(this.over)return null;

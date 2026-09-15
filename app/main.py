@@ -39,3 +39,8 @@ async def index() -> FileResponse:
 @app.get("/battle", include_in_schema=False)
 async def battle_index() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "battle.html")
+
+
+@app.get("/settings", include_in_schema=False)
+async def settings_index() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "settings.html")

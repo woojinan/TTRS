@@ -4,8 +4,7 @@
   const read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
   const write=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{}};
   const saved=read(SETTINGS,{}),audio=new GameAudio();
-  const prefs={skin:BlockSkins.get(saved?.skin).id,das:133,arr:10,ghost:saved?.ghost!==false,sfx:65,music:20,muted:saved?.muted===true,effects:saved?.effects!==false};
-  for(const [key,max] of [['das',300],['arr',100],['sfx',100],['music',100]])if(Number.isFinite(saved?.[key]))prefs[key]=Math.max(0,Math.min(max,saved[key]));
+  const prefs=TTRSPreferences.normalize(saved);
   let socket=null,selfId=null,room=null,latest=null,seq=0,lastEvent=null,feedbackTimer=null,connectTimer=null,retryTimer=null,closing=false,exitAction=null,lastPong=0;
   const held=new Set(),tiles=new Map();
   const nextCanvases=Array.from({length:5},(_,i)=>{const c=document.createElement('canvas');c.width=316;c.height=104;c.className='next-item';c.setAttribute('aria-label',`다음 ${i+1}번 블록`);return c;});
@@ -104,13 +103,13 @@
   function eventText(e){if(e.perfect)return `PERFECT CLEAR · +${e.outgoing}`;const clear=e.spin||['','SINGLE','DOUBLE','TRIPLE','TETRIS'][e.lines]||'';return [clear,e.chained?'B2B':'',e.combo>0?`COMBO ${e.combo}`:'',e.outgoing?`공격 +${e.outgoing}`:'',e.cancelled?`${e.cancelled}줄 상쇄`:'',e.risen?`${e.risen}줄 상승`:''].filter(Boolean).join(' · ');}
   function tile(ctx,x,y,size,color,skin,ghost=false){
     if(color==='#647580'){ctx.fillStyle='#7e91ae';ctx.beginPath();ctx.roundRect(x+1,y+1,size-2,size-2,3);ctx.fill();ctx.strokeStyle='#adbed6';ctx.lineWidth=1;ctx.stroke();return;}
-    const key=[size,color,skin,ghost].join(':');if(!tiles.has(key)){const c=document.createElement('canvas');c.width=size*2;c.height=size*2;const g=c.getContext('2d');g.scale(2,2);BlockSkins.draw(g,0,0,size,color,skin,ghost);tiles.set(key,c);}ctx.drawImage(tiles.get(key),x,y,size,size);
+    const key=[size,color,skin,ghost,ghost?prefs.ghostOpacity:0].join(':');if(!tiles.has(key)){const c=document.createElement('canvas');c.width=size*2;c.height=size*2;const g=c.getContext('2d');g.scale(2,2);BlockSkins.draw(g,0,0,size,color,skin,ghost,prefs.ghostOpacity);tiles.set(key,c);}ctx.drawImage(tiles.get(key),x,y,size,size);
   }
   function renderBoard(canvas,p,own=false){
-    const ctx=canvas.getContext('2d');ctx.setTransform(2,0,0,2,0,0);ctx.fillStyle='#33486b';ctx.fillRect(0,0,300,600);
-    for(let y=0;y<20;y++)for(let x=0;x<10;x++){ctx.fillStyle='#0d1526';ctx.beginPath();ctx.roundRect(x*30+1,y*30+1,28,28,3);ctx.fill();const v=p?.board?.[y+2]?.[x];if(v)tile(ctx,x*30,y*30,30,v,p.skin);}
+    const ctx=canvas.getContext('2d');ctx.setTransform(2,0,0,2,0,0);ctx.fillStyle=TTRSPreferences.gridColor(prefs);ctx.fillRect(0,0,300,600);
+    for(let y=0;y<20;y++)for(let x=0;x<10;x++){ctx.fillStyle=TTRSPreferences.background(prefs);ctx.beginPath();ctx.roundRect(x*30+1,y*30+1,28,28,3);ctx.fill();const v=p?.board?.[y+2]?.[x];if(v)tile(ctx,x*30,y*30,30,v,p.skin);}
     if(!p?.current||p.over)return;
-    if(own&&prefs.ghost){const g=Object.assign(Object.create(Tetris.Game.prototype),{board:p.board,current:p.current}),ghost={...p.current};let n=0;while(!g.blocked(ghost,0,1)&&n++<22)ghost.y++;for(const {x,y} of Tetris.cells(ghost))if(y>=2)tile(ctx,x*30,(y-2)*30,30,p.current.c,p.skin,true);}
+    if(own&&prefs.ghost){const g=Object.assign(Object.create(Tetris.Game.prototype),{board:p.board,current:p.current}),ghost={...p.current};while(!g.blocked(ghost,0,1))ghost.y++;for(const {x,y} of Tetris.cells(ghost))if(y>=2)tile(ctx,x*30,(y-2)*30,30,p.current.c,p.skin,true);}
     for(const {x,y} of Tetris.cells(p.current))if(y>=2)tile(ctx,x*30,(y-2)*30,30,p.current.c,p.skin);
   }
   function renderPreviews(p){
@@ -156,6 +155,15 @@
     b.onclick=e=>{if(e.detail===0)input(b.dataset.action);};
   });
   window.addEventListener('pagehide',()=>{closing=true;clearTimeout(retryTimer);send({type:'leave'});socket?.close();});
+  window.addEventListener('storage',e=>{
+    if(e.key!==SETTINGS&&e.key!==null)return;
+    Object.assign(prefs,TTRSPreferences.load());tiles.clear();release();audio.configure(prefs);
+    if(!prefs.effects){clearTimeout(feedbackTimer);$('#self-feedback').textContent='';}
+    $('#battle-skin').value=prefs.skin;$('#battle-das').value=prefs.das;$('#battle-arr').value=prefs.arr;$('#battle-mute').checked=prefs.muted;
+    if(room)send({type:'settings',skin:prefs.skin,das:prefs.das,arr:prefs.arr});
+    const mine=latest?.players.find(p=>p.id===selfId),other=latest?.players.find(p=>p.id!==selfId);
+    renderBoard($('#self-board'),mine,true);renderBoard($('#opponent-board'),other);renderPreviews(mine);
+  });
   setInterval(()=>{if(connected()){if(performance.now()-lastPong>15000){connection(false,'연결 지연 · 확인 중');socket.close();}else send({type:'ping',at:performance.now()});}},5000);
   connect();
 })();
